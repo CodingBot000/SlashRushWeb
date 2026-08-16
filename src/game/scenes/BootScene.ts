@@ -1,77 +1,81 @@
 import Phaser from "phaser";
 
-function texture(scene: Phaser.Scene, key: string, width: number, height: number, draw: (g: Phaser.GameObjects.Graphics) => void) {
-  const g = scene.make.graphics({ x: 0, y: 0 });
-  draw(g);
-  g.generateTexture(key, width, height);
-  g.destroy();
-}
+const ASSET = "/assets/godot-source/assets";
+
+export const assetPath = (relativePath: string) => `${ASSET}/${relativePath}`;
 
 export class BootScene extends Phaser.Scene {
   constructor() {
     super("BootScene");
   }
 
+  preload() {
+    this.load.image("introBg", assetPath("background/intro/intro_background.png"));
+    this.load.image("logo", assetPath("ui/logo.png"));
+    this.load.image("menuButton", assetPath("ui/button_rectangle_depth_flat.png"));
+    this.load.image("settingsIcon", assetPath("ui/icon_setting.png"));
+    this.load.image("combo", assetPath("ui/combo.png"));
+    this.load.image("waitCue", assetPath("ui/window_01.png"));
+    for (let index = 1; index <= 5; index += 1) {
+      this.load.image(`circle${index}`, assetPath(`ui/circle_0${index}.png`));
+    }
+
+    this.load.image("sky", assetPath("background/stage1/sky_static.png"));
+    this.load.image("clouds", assetPath("background/stage1/cloud_01.png"));
+    this.load.image("farMountains", assetPath("background/stage1/far_mountains_01.png"));
+    this.load.image("midStructures", assetPath("background/stage1/mid_structures_01.png"));
+    this.load.image("nearForeground", assetPath("background/stage1/near_foreground_01.png"));
+    this.load.image("ground", assetPath("background/stage1/ground_tile_01.png"));
+    this.load.image("bossBackground", assetPath("background/stage1/boss_background.png"));
+
+    this.load.image("playerPreview", assetPath("characters/player1.png"));
+    for (let index = 1; index <= 5; index += 1) {
+      this.load.image(`character${index}`, assetPath(`characters/player${index}.png`));
+    }
+    this.load.image("playerRun1", assetPath("sprites/samurai/run/frame_01.png"));
+    this.load.image("playerRun2", assetPath("sprites/samurai/run/frame_02.png"));
+    this.load.image("playerRun3", assetPath("sprites/samurai/run/frame_03.png"));
+    this.load.image("playerRun4", assetPath("sprites/samurai/run/frame_04.png"));
+    this.load.image("playerIdle", assetPath("sprites/samurai/idle/player_stand.png"));
+    this.load.image("playerDamage", assetPath("sprites/samurai/damage/player_damage.png"));
+    this.load.image("playerDead", assetPath("sprites/samurai/dead/dead.png"));
+    this.load.image("swordSlash", assetPath("sprites/samurai/run/sword_slash.png"));
+    this.load.image("slashEffect", assetPath("sprites/effect/slash_sword/slash_effect.png"));
+
+    this.load.image("enemyBasic", assetPath("objects/scarecrow2.png"));
+    this.load.image("enemyBasicSlice", assetPath("objects/scarecrow1.png"));
+    this.load.image("enemyFast", assetPath("objects/red_ghost2.png"));
+    this.load.image("enemyFastSlice", assetPath("objects/red_ghost1.png"));
+    this.load.image("enemyArmor", assetPath("objects/drum2.png"));
+    this.load.image("enemyArmorSlice", assetPath("objects/drum1.png"));
+    this.load.image("bomb", assetPath("objects/apple_rotten.png"));
+    this.load.image("coin", assetPath("objects/coin.png"));
+    this.load.image("heal", assetPath("objects/apple.png"));
+    this.load.image("feverOrb", assetPath("items/fever_orb.png"));
+
+    this.load.image("bossBody", assetPath("boss/robot_samurai/boss_body.png"));
+    this.load.image("bossHead", assetPath("boss/robot_samurai/boss_head.png"));
+    this.load.image("bossLeftArm", assetPath("boss/robot_samurai/boss_left_arm.png"));
+    this.load.image("bossRightArm", assetPath("boss/robot_samurai/boss_right_arm.png"));
+    this.load.image("bossSword", assetPath("boss/robot_samurai/boss_sword.png"));
+    this.load.image("bossCore", assetPath("boss/robot_samurai/boss_core.png"));
+    this.load.image("bossClothLeft", assetPath("boss/robot_samurai/boss_cloth_left.png"));
+    this.load.image("bossClothRight", assetPath("boss/robot_samurai/boss_cloth_right.png"));
+    for (let index = 1; index <= 7; index += 1) {
+      this.load.image(`scrap${index}`, assetPath(`boss/robot_samurai/scrap${index}.png`));
+    }
+
+    this.load.audio("lobbyMusic", assetPath("audio/music/lobby.wav"));
+    this.load.audio("runningMusic", assetPath("audio/music/runningplay.mp3"));
+    this.load.audio("bossMusic", assetPath("audio/music/boss.mp3"));
+    this.load.audio("uiClick", assetPath("audio/sfx/ui-button-click.ogg"));
+    this.load.audio("startGame", assetPath("audio/sfx/start_game.ogg"));
+    this.load.audio("slashSfx", assetPath("audio/sfx/sword-slash.mp3"));
+    this.load.audio("pickupSfx", assetPath("audio/sfx/pickup_item.ogg"));
+    this.load.audio("errorSfx", assetPath("audio/sfx/error_002.ogg"));
+  }
+
   create() {
-    if (!this.textures.exists("player")) {
-      texture(this, "player", 96, 128, (g) => {
-        g.fillStyle(0x13182d, 1);
-        g.fillRoundedRect(26, 28, 44, 70, 14);
-        g.fillStyle(0x6ae8ff, 1);
-        g.fillRoundedRect(34, 19, 28, 26, 10);
-        g.fillStyle(0x060914, 1);
-        g.fillRect(36, 28, 24, 7);
-        g.fillStyle(0xffa23d, 1);
-        g.fillTriangle(67, 54, 91, 45, 70, 67);
-        g.fillStyle(0x6ae8ff, 1);
-        g.fillRect(29, 96, 14, 24);
-        g.fillRect(53, 96, 14, 24);
-        g.lineStyle(4, 0xff7b22, 1);
-        g.strokeRoundedRect(26, 28, 44, 70, 14);
-      });
-    }
-
-    if (!this.textures.exists("enemy")) {
-      texture(this, "enemy", 90, 112, (g) => {
-        g.fillStyle(0x5d183b, 1);
-        g.fillRoundedRect(20, 24, 50, 60, 18);
-        g.fillStyle(0xff4f79, 1);
-        g.fillCircle(35, 48, 7);
-        g.fillCircle(55, 48, 7);
-        g.fillStyle(0x24112d, 1);
-        g.fillRect(30, 65, 30, 7);
-        g.fillStyle(0xffa23d, 1);
-        g.fillRect(23, 84, 14, 21);
-        g.fillRect(53, 84, 14, 21);
-        g.lineStyle(4, 0xff4f79, 1);
-        g.strokeRoundedRect(20, 24, 50, 60, 18);
-      });
-    }
-
-    if (!this.textures.exists("coin")) {
-      texture(this, "coin", 48, 48, (g) => {
-        g.fillStyle(0xffc857, 1);
-        g.fillCircle(24, 24, 17);
-        g.lineStyle(4, 0xfff3a5, 1);
-        g.strokeCircle(24, 24, 14);
-        g.fillStyle(0xfff3a5, 1);
-        g.fillRect(21, 15, 6, 18);
-      });
-    }
-
-    if (!this.textures.exists("ground")) {
-      texture(this, "ground", 1280, 120, (g) => {
-        g.fillStyle(0x171d35, 1);
-        g.fillRect(0, 0, 1280, 120);
-        g.fillStyle(0x293453, 1);
-        g.fillRect(0, 0, 1280, 7);
-        g.lineStyle(2, 0x3c5d83, 0.65);
-        for (let x = 0; x < 1280; x += 64) g.lineBetween(x, 12, x + 20, 120);
-        g.fillStyle(0xff7b22, 0.6);
-        for (let x = 24; x < 1280; x += 160) g.fillRect(x, 26, 54, 4);
-      });
-    }
-
     this.scene.start("GameScene");
   }
 }

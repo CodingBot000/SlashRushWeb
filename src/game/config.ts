@@ -10,7 +10,7 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
   parent: "app",
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
-  backgroundColor: "#060914",
+  backgroundColor: "#070a11",
   render: {
     antialias: true,
     roundPixels: true,
@@ -24,13 +24,6 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
   },
   input: {
     activePointers: 3,
-  },
-  physics: {
-    default: "arcade",
-    arcade: {
-      gravity: { x: 0, y: 1550 },
-      debug: false,
-    },
   },
   scene: [BootScene, GameScene],
 };

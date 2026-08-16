@@ -1,99 +1,136 @@
 # SlashRush Phaser 2D WebGame 개발계획서
 
 작성일: 2026-08-17  
-대상 프로젝트: `SLASHRUSH`  
+기준 원본: `/Users/switch/Downloads/SlashRush-main`  
 목표 저장소: `SlashRushWeb`  
-목표 배포: Vercel
+배포 대상: Vercel
 
-## 1. 조사 결과와 현재 확정 범위
+## 1. 조사 결론
 
-사용자가 제공한 원본은 `https://github.com/CodingBot000/SlashRush`입니다. 조사 시점에 GitHub 웹 페이지와 GitHub API 모두 `404 Not Found`를 반환했고, HTTPS clone은 인증 오류, SSH 접근은 `Permission denied (publickey)`로 실패했습니다. 작업 폴더에도 Godot 원본이나 `docs` 사본이 없었습니다.
+다운로드된 Godot 4.x 프로젝트를 기준 소스로 확정했다. 기존 Phaser 프로토타입의 점프/네온 러너 루프는 원본과 달라 폐기하고, 원본의 모바일 가로형 액션 러너 구조를 Phaser 3 + Vite + TypeScript로 변환한다.
 
-따라서 원본의 마지막 `docs` 상태, 실제 씬 구조, 에셋 라이선스, 게임 규칙을 확인했다고 가정하지 않습니다. 현재 구현은 원본을 임의로 복제했다고 주장하지 않고, 다음 조건을 만족하는 Phaser 변환 기반을 먼저 완성합니다.
+원본에서 확인한 씬 흐름은 다음과 같다.
 
-- Phaser 3 + Vite + TypeScript
-- 논리 해상도 1280×720, `Phaser.Scale.FIT`, 모바일 가로모드 우선
-- 메뉴 → 런 시작 → 점프/2단 점프 → 베기 → 적/코인/콤보 → 피격/게임오버 → 재시작
-- 키보드와 터치 입력을 같은 게임 명령으로 연결
-- 원본 에셋이 도착하면 교체 가능한 `BootScene` 텍스처 경계와 `public/assets` 경로
+```text
+IntroScene → MainMenu → CharacterSelect / HowTo
+                         ↓
+                   RunnerStage (60초)
+                         ↓
+                   BossStage (로봇 사무라이)
+                         ↓
+                     ResultScene
+```
 
-## 2. 시각·UX 기준
+원본의 핵심 설계:
 
-현재의 시각 기준은 차가운 인디고 야경 위에 시안 HUD와 오렌지 슬래시 효과를 두는 아케이드 액션 방향입니다. 화면 중앙은 게임 플레이, 상단은 점수·콤보·체력·일시정지, 하단 좌우는 모바일 터치 버튼으로 고정합니다.
+- 논리 해상도 1280×720, 모바일 가로모드, CanvasItems stretch
+- 플레이어는 화면 왼쪽에 고정되고 배경·지형·오브젝트가 왼쪽으로 이동
+- 러너 제한 시간 60초, 시작 HP 3, Fever 게이지 100
+- 입력은 탭, 빠른 두 번 탭, 길게 누르기, 무입력 통과의 네 종류
+- 일반 적은 탭, 빠른 적은 두 번 탭, 갑옷 적은 홀드로 처리
+- 코인·회복 아이템·Fever Orb는 베지 않고 통과해 자동 수집
+- 러너 종료 후 로봇 사무라이 보스전으로 전환
+- 보스 HP 10, 탭/두 번 탭/홀드/대기 패턴을 순서대로 수행
 
-가독성 기준:
+## 2. 원본 규칙 매핑
 
-- 가로 화면에서 핵심 HUD가 1280×720 논리 좌표 기준으로 항상 보인다.
-- 작은 모바일 화면에서는 캔버스를 비율 유지로 축소하고, 세로 화면에서는 전용 가로모드 안내를 보여준다.
-- 터치 버튼은 좌측 점프, 우측 베기로 구분하며 캔버스 전체 입력도 같은 명령으로 동작한다.
-- 플레이어·적·코인·지형은 원본 에셋이 없을 때도 코드 생성 텍스처로 즉시 실행 가능하다.
+| 오브젝트 | 입력 | 점수 | Fever | Phaser 키 |
+| --- | --- | ---: | ---: | --- |
+| 기본 적 | TAP | 100 | 6 | `scarecrow2.png` |
+| 빠른 적 | TAP TAP | 150 | 10 | `red_ghost2.png` |
+| 갑옷 적 | HOLD | 150 | 10 | `drum2.png` |
+| 폭탄 | TAP | 80 | 4 | `apple_rotten.png` |
+| 코인 | 무입력 통과 | 20 | 0 | `coin.png` |
+| 회복 아이템 | 무입력 통과 | 0 | 0 | `apple.png` |
+| Fever Orb | 무입력 통과 | 50 | 25 | `fever_orb.png` |
 
-## 3. 시스템 설계
+잘못된 공격은 보상 없이 콤보를 끊고 HP를 감소시킨다. 성공 공격은 콤보와 Fever를 올리며, Fever 중에는 공격 가능한 적을 넓게 처리한다.
+
+보스 패턴은 원본 데이터의 phase 1/2 구조를 반영한다. TAP, TAP TAP, HOLD는 성공 시 200점과 Fever 25를 주고, WAIT는 자동 통과한다. 보스 처치 시 500점 클리어 보너스를 지급한다.
+
+## 3. 에셋 이식
+
+원본 `assets/` 전체를 다음 위치에 보존 복사했다.
+
+```text
+public/assets/godot-source/assets/
+```
+
+포함 범위:
+
+- 인트로·스테이지·보스 배경
+- 로고·메뉴 버튼·설정 아이콘·HUD 이미지
+- 플레이어 idle/run/damage/dead/slash 스프라이트
+- scarecrow, ghost, drum, apple, coin, Fever Orb
+- 로봇 사무라이 body/head/arms/sword/core/scraps
+- lobby/running/boss 음악과 UI·slash·pickup·error 효과음
+
+Godot의 배경 셰이더가 처리하던 밝은 무채색 매트 제거는 `GameScene.prepareAlphaKeyTexture()`로 옮겼다. 이 처리는 WebGL 파이프라인이 없는 브라우저 CanvasRenderer에서도 동일하게 보이도록 로드 후 Canvas 픽셀 알파를 생성한다. `sky_static.png`는 다운로드본에 흰색 매트가 포함되어 있어 원본 색상에 맞춘 녹색→금색 그라디언트를 하늘 바탕으로 사용한다.
+
+## 4. Phaser 구조
 
 ```text
 src/main.ts
   └─ Phaser.Game
-      ├─ BootScene       : 실행 시 텍스처/에셋 준비
-      └─ GameScene       : 메뉴, 월드, HUD, 입력, 전투, 점수 상태
+      ├─ BootScene       : 원본 PNG/오디오 로드
+      └─ GameScene       : Intro/Menu/Select/HowTo/Runner/Boss/Result
 
-src/game/rules.ts       : 순수 점수·콤보·스폰 규칙 및 Vitest 테스트
-public/assets/          : 원본 Godot 에셋 수령 후 이식 위치
+src/game/rules.ts        : 입력 판정, 점수, 오브젝트 규칙, 스폰 일정
+src/game/config.ts       : 1280×720 FIT 및 모바일 스케일
+public/assets/godot-source/assets/
+                         : 원본 에셋 보존 영역
 ```
 
-규칙과 렌더링을 분리하는 이유는 원본 Godot 문서가 복구될 때 숫자 밸런스나 충돌 판정을 UI 코드를 건드리지 않고 교체하기 위해서입니다.
+입력은 터치와 키보드를 같은 명령으로 통합한다.
 
-## 4. 원본 에셋 이식 절차
+- 화면 탭 / `Space`: TAP
+- 짧은 두 번 탭 / `Space` 두 번: TAP TAP
+- 0.45초 이상 누르기: HOLD
+- `B`: QA용 러너→보스 전환
+- `R`: 현재 진행 재시작
+- `Esc`: 일시정지 또는 이전 화면
 
-원본 저장소가 공개되거나 zip으로 제공되면 다음 순서로 진행합니다.
+## 5. 모바일 가로모드 기준
 
-1. 원본 `docs`의 최신 커밋과 Godot `project.godot`의 메인 씬을 읽고 이 문서의 미확정 항목을 갱신한다.
-2. `sprites`, `textures`, `audio`, `fonts`, `tilemaps`를 분류하고 라이선스/파일 크기를 기록한다.
-3. PNG/WebP는 `public/assets/godot-source/`에 원본 보존 복사하고, 필요 시 Phaser atlas JSON으로 변환한다.
-4. Godot 씬의 플레이어 상태, 적 상태, 공격 프레임, 충돌 shape, 맵 진행 규칙을 `src/game` 모듈로 매핑한다.
-5. 원본과 Phaser 캡처를 같은 시나리오로 비교해 레이아웃·프레임·점수·피격 결과를 조정한다.
-6. 원본 에셋을 쓸 수 없는 경우에만 현재의 코드 생성 텍스처를 대체 구현으로 유지한다.
+- 게임 논리 화면은 1280×720으로 고정한다.
+- `Phaser.Scale.FIT`와 중앙 정렬로 비율을 유지한다.
+- 세로 화면에서는 게임 입력을 막고 `#orientation-lock` 가로모드 안내를 표시한다.
+- 터치 이벤트의 press duration으로 TAP/HOLD를 구분하고, 더블 탭 시간창은 0.25초로 둔다.
+- HUD와 보스 게이지는 1280×720 기준 안전 영역 안에 배치한다.
 
-## 5. 완료 기준
+## 6. 구현 상태
 
-- [x] Phaser 앱 부트 및 Vite build
-- [x] 가로모드 스케일링과 세로 안내
-- [x] 키보드/터치 입력
-- [x] 점프, 2단 점프, 베기, 적 충돌, 코인, 콤보, 체력, 게임오버, 재시작
-- [x] 순수 게임 규칙 단위 테스트
-- [x] Playwright smoke test 초안
-- [ ] 원본 Godot docs와 실제 상태 대조
-- [ ] 원본 스프라이트/맵/사운드 전체 이식
-- [ ] 원본과의 프레임 단위 플레이 패리티 검증
-- [ ] GitHub `SlashRushWeb` 원격 생성/푸시
-- [ ] Vercel 계정 연결 후 production 배포
+- [x] 원본 Godot 프로젝트의 씬 흐름·입력·점수·보스 패턴 조사
+- [x] 원본 에셋 전체를 `public/assets/godot-source/assets`로 이식
+- [x] Intro / MainMenu / CharacterSelect / HowTo / Runner / Boss / Result 구현
+- [x] 원본 플레이어·오브젝트·보스·배경·오디오 연결
+- [x] 60초 러너, HP 3, 콤보, Fever, 코인, 로컬 최고 점수
+- [x] 모바일 터치와 데스크톱 키보드 입력 통합
+- [x] 원본 배경 매트 제거 셰이더를 Canvas 픽셀 처리로 변환
+- [x] Vitest 규칙 테스트 및 Vite production build
+- [x] 브라우저 인트로/메뉴/러너/보스 진입과 콘솔 오류 점검
+- [ ] 원본 Godot와 프레임 단위 플레이 패리티 비교
+- [ ] GitHub 원격 `SlashRushWeb` 신규 생성 및 push
+- [ ] Vercel production 배포 최신본 확인
 
-## 7. 1차 QA 결과
-
-2026-08-17 기준 다음 검증을 완료했습니다.
+## 7. QA 체크리스트
 
 ```text
-npm test       : 4 tests passed
-npm run build  : Vite production build passed
-npm run test:e2e: 4 tests passed
+npm test       : rules 단위 테스트
+npm run build  : TypeScript + Vite production build
+npm run test:e2e: Playwright smoke / orientation test
+npm run dev    : http://127.0.0.1:4173/
 ```
 
-브라우저에서 메뉴의 `START RUN`, 플레이 진입, 점프/베기 키 입력, 모바일 가로 844×390 화면, 세로 390×844 화면의 가로모드 안내를 확인했습니다. 확인 중 발견한 메뉴 버튼 라벨 가림 문제도 수정했으며, 확인한 브라우저 콘솔 오류는 없습니다.
+브라우저에서 확인할 시나리오:
 
-남은 QA 리스크는 원본 Godot와 비교할 실제 기준 플레이 영상·씬·에셋이 없다는 점입니다. 원본이 복구되면 동일 시나리오를 녹화하여 충돌, 프레임, 점수, 사운드, 에셋 라이선스를 다시 대조합니다.
+1. 인트로 탭/Space → 원본 로고 메뉴 표시
+2. PLAY → 원본 배경, 고정 플레이어, 오브젝트 입력 안내 표시
+3. TAP/TAP TAP/HOLD 및 아이템 무입력 통과 판정
+4. `B` → 보스 배경, 로봇 사무라이, 보스 HP/패턴 HUD 표시
+5. 결과 화면 RETRY/MENU, 최고 점수·코인 저장
+6. 가로 모바일 화면 스케일링과 세로 화면 가로모드 안내
 
-## 6. 배포 계획
+## 8. 알려진 변환 차이
 
-정적 Vite 산출물이므로 Vercel 프로젝트의 root를 `SLASHRUSH`로 설정하고 `npm run build` 결과인 `dist`를 배포합니다. 환경 변수는 필요하지 않습니다. GitHub와 Vercel CLI 인증이 연결되면 다음을 수행합니다.
-
-```bash
-git init
-git add .
-git commit -m "Build Phaser SlashRush web game"
-git branch -M main
-git remote add origin <GitHub SlashRushWeb URL>
-git push -u origin main
-vercel link
-vercel --prod
-```
-
-현재 환경에서는 원본 저장소 접근과 GitHub/Vercel 인증 상태를 확인할 수 없으므로, 해당 두 외부 작업은 인증 복구 후 재실행해야 합니다.
+Godot의 개별 AnimationPlayer 타이밍과 보스 파츠별 원본 모션은 Phaser에서 동일한 입력·상태·시각 자산을 유지하는 범위로 근사했다. 원본의 물리 충돌 shape와 프레임 단위 모션 데이터가 추가로 필요하면 동일 시나리오 녹화 비교를 통해 수치를 조정한다. 배포 전에는 반드시 `npm run build`, `npm test`, `npm run test:e2e`를 다시 실행한다.

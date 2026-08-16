@@ -1,7 +1,11 @@
-# Godot source assets placeholder
+# Godot source assets
 
-The requested source repository was unavailable during this conversion pass:
+These files were copied from the downloaded Godot project:
 
-`https://github.com/CodingBot000/SlashRush` → HTTP 404 / clone authentication failure.
+`/Users/switch/Downloads/SlashRush-main/assets`
 
-Place the original Godot assets here after access is restored. Keep the original files in a subdirectory and update the Phaser asset manifest before replacing the generated fallback textures in `src/game/scenes/BootScene.ts`.
+They are kept under `assets/` so the Phaser asset manifest can mirror the original folder names. Godot-generated `.import` files and the `.godot` editor cache are intentionally excluded; Phaser loads the original PNG/audio files directly from Vite's public directory.
+
+The conversion notes and source-derived gameplay rules are in:
+
+`docs/PHASER2D_WEBGAME_DEVELOPMENT_PLAN.md`

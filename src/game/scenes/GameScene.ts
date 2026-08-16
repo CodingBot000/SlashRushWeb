@@ -1,437 +1,980 @@
 import Phaser from "phaser";
 import { GAME_HEIGHT, GAME_WIDTH } from "../config";
-import { clamp, comboMultiplier, nextSpawnDelay, scoreForDefeat } from "../rules";
+import {
+  actionHint,
+  actionMatches,
+  BOSS_MAX_HP,
+  buildRunnerSchedule,
+  clamp,
+  FEVER_DURATION,
+  MAX_FEVER,
+  MAX_HP,
+  OBJECT_RULES,
+  RequiredAction,
+  RUNNER_DURATION,
+  scoreMultiplier,
+  SlashAction,
+  STARTING_HP,
+  SpawnEvent,
+  RunnerObjectType,
+} from "../rules";
 
-type GameMode = "menu" | "playing" | "gameover";
+type GameMode = "intro" | "menu" | "character" | "howto" | "runner" | "boss" | "result";
+
+interface RunnerObject {
+  type: RunnerObjectType;
+  rule: (typeof OBJECT_RULES)[RunnerObjectType];
+  sprite: Phaser.GameObjects.Image;
+  x: number;
+  baseY: number;
+  phase: number;
+  handled: boolean;
+}
 
 const COLORS = {
-  ink: 0x060914,
-  surface: 0x11172a,
-  cyan: 0x6ae8ff,
-  orange: 0xff7b22,
-  gold: 0xffc857,
-  pink: 0xff4f79,
-  white: 0xf4f7ff,
-  muted: 0x9ca9c9,
+  ink: 0x070a11,
+  panel: 0x0b0d14,
+  white: 0xf7f4ed,
+  cream: 0xffefc0,
+  muted: 0xc6cad4,
+  gold: 0xffca5f,
+  red: 0xff6b6b,
+  blue: 0x9ec8ff,
+  cyan: 0x5ef3ff,
+  green: 0x76ff9c,
 };
 
 export class GameScene extends Phaser.Scene {
-  private mode: GameMode = "menu";
+  private mode: GameMode = "intro";
   private paused = false;
-  private elapsed = 0;
-  private score = 0;
-  private combo = 0;
-  private comboTimer = 0;
-  private health = 3;
-  private spawnTimer = 0;
-  private coinTimer = 0;
+  private tracked: Phaser.GameObjects.GameObject[] = [];
+  private runnerTiles: Phaser.GameObjects.TileSprite[] = [];
+  private runnerObjects: RunnerObject[] = [];
+  private schedule: SpawnEvent[] = [];
+  private scheduleIndex = 0;
+  private runnerElapsed = 0;
+  private player!: Phaser.GameObjects.Sprite;
+  private playerSlash!: Phaser.GameObjects.Image;
+  private playerFrame = 0;
+  private playerFrameTimer = 0;
+  private playerHurtTimer = 0;
   private slashTimer = 0;
-  private hitCooldown = 0;
-  private jumpCount = 0;
-  private readonly highScoreKey = "slashrush-high-score";
+  private feedbackTimer = 0;
+  private feverOverlay?: Phaser.GameObjects.Rectangle;
+  private feverText?: Phaser.GameObjects.Text;
+  private feverSpawnTimer = 0;
+  private feverTimeLeft = 0;
+  private fever = 0;
+  private feverActive = false;
+  private score = 0;
+  private coins = 0;
+  private combo = 0;
+  private health = STARTING_HP;
+  private bestScore = 0;
 
-  private player!: Phaser.Physics.Arcade.Sprite;
-  private enemies!: Phaser.Physics.Arcade.Group;
-  private coins!: Phaser.Physics.Arcade.Group;
-  private platforms!: Phaser.Physics.Arcade.StaticGroup;
-  private slashFx!: Phaser.GameObjects.Graphics;
-  private worldFx!: Phaser.GameObjects.Graphics;
-  private cityFar!: Phaser.GameObjects.Graphics;
-  private cityNear!: Phaser.GameObjects.Graphics;
-  private starLayer!: Phaser.GameObjects.Graphics;
-  private hud!: Phaser.GameObjects.Container;
-  private scoreText!: Phaser.GameObjects.Text;
-  private comboText!: Phaser.GameObjects.Text;
-  private healthText!: Phaser.GameObjects.Text;
-  private hintText!: Phaser.GameObjects.Text;
-  private stateLayer!: Phaser.GameObjects.Container;
-  private pauseButton!: Phaser.GameObjects.Text;
-  private touchLabels!: Phaser.GameObjects.Container;
+  private scoreText?: Phaser.GameObjects.Text;
+  private heartsText?: Phaser.GameObjects.Text;
+  private comboText?: Phaser.GameObjects.Text;
+  private coinsText?: Phaser.GameObjects.Text;
+  private feverFill?: Phaser.GameObjects.Rectangle;
+  private bossFill?: Phaser.GameObjects.Rectangle;
+  private bossTimerFill?: Phaser.GameObjects.Rectangle;
+  private bossLabel?: Phaser.GameObjects.Text;
+  private hintText?: Phaser.GameObjects.Text;
+  private feedbackText?: Phaser.GameObjects.Text;
+  private pauseButton?: Phaser.GameObjects.Text;
+  private stateObjects: Phaser.GameObjects.GameObject[] = [];
+
+  private pressStartedAt = -1;
+  private lastTapAt = -10;
+  private keyboardPressed = false;
+
+  private bossContainer?: Phaser.GameObjects.Container;
+  private bossBody?: Phaser.GameObjects.Image;
+  private bossLeftArm?: Phaser.GameObjects.Image;
+  private bossRightArm?: Phaser.GameObjects.Image;
+  private bossCore?: Phaser.GameObjects.Image;
+  private bossHp = BOSS_MAX_HP;
+  private bossCombo = 0;
+  private bossPatternIndex = 0;
+  private bossAction: RequiredAction | null = null;
+  private bossPatternTime = 0;
+  private bossNextDelay = 0;
+  private bossFever = 0;
+  private bossFeverActive = false;
+  private bossFeverTimeLeft = 0;
+  private bossHint?: Phaser.GameObjects.Text;
+  private bossCueOne?: Phaser.GameObjects.Image;
+  private bossCueTwo?: Phaser.GameObjects.Image;
+  private bossWaitCue?: Phaser.GameObjects.Image;
+  private bossScraps: Phaser.GameObjects.Image[] = [];
+  private music?: Phaser.Sound.BaseSound;
 
   constructor() {
     super("GameScene");
   }
 
   create() {
-    this.physics.world.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    this.createBackground();
-    this.createWorld();
-    this.createHud();
-    this.createTouchControls();
+    this.bestScore = Number(localStorage.getItem("slashrush-best-score") || 0);
+    this.coins = Number(localStorage.getItem("slashrush-coins") || 0);
     this.createInput();
-    this.showMenu();
+    this.showIntro();
   }
 
   update(_time: number, delta: number) {
-    const dt = Math.min(delta, 40);
-    this.animateBackground(dt);
-
-    if (this.mode !== "playing" || this.paused) return;
-
-    const seconds = dt / 1000;
-    this.elapsed += seconds;
-    this.spawnTimer -= dt;
-    this.coinTimer -= dt;
-    this.slashTimer = Math.max(0, this.slashTimer - dt);
-    this.comboTimer -= dt;
-    this.hitCooldown = Math.max(0, this.hitCooldown - dt);
-
-    if (this.comboTimer <= 0) this.combo = 0;
-    if (this.spawnTimer <= 0) {
-      this.spawnEnemy();
-      this.spawnTimer = nextSpawnDelay(this.elapsed);
+    const seconds = Math.min(delta, 50) / 1000;
+    if (this.mode === "intro") {
+      this.animateIntro();
+      return;
     }
-    if (this.coinTimer <= 0) {
-      this.spawnCoinLine();
-      this.coinTimer = 2000;
+    if (this.mode === "runner" && !this.paused) this.updateRunner(seconds);
+    if (this.mode === "boss" && !this.paused) this.updateBoss(seconds);
+  }
+
+  private track<T extends Phaser.GameObjects.GameObject>(object: T): T {
+    this.tracked.push(object);
+    return object;
+  }
+
+  private addText(x: number, y: number, text: string, size: number, color = COLORS.white, originX = 0.5, originY = 0.5, depth = 20) {
+    return this.track(
+      this.add.text(x, y, text, {
+        fontFamily: "Arial, Helvetica, sans-serif",
+        fontSize: size + "px",
+        fontStyle: size >= 28 ? "bold" : "normal",
+        color: "#" + color.toString(16).padStart(6, "0"),
+        stroke: "#070a11",
+        strokeThickness: size >= 24 ? 4 : 2,
+      }).setOrigin(originX, originY).setDepth(depth),
+    );
+  }
+
+  private clearScene() {
+    this.tweens.killAll();
+    this.time.removeAllEvents();
+    if (this.music) {
+      this.music.stop();
+      this.music.destroy();
+      this.music = undefined;
     }
-
-    this.enemies.children.each((child) => {
-      const enemy = child as Phaser.Physics.Arcade.Sprite;
-      if (!enemy.active) return true;
-      enemy.setVelocityX(-(300 + Math.min(160, this.elapsed * 3)));
-      if (enemy.x < -100) {
-        enemy.destroy();
-        this.combo = 0;
-      }
-      return true;
-    });
-    this.coins.children.each((child) => {
-      const coin = child as Phaser.Physics.Arcade.Sprite;
-      if (!coin.active) return true;
-      coin.setVelocityX(-(300 + Math.min(160, this.elapsed * 3)));
-      coin.angle += 4;
-      if (coin.x < -80) coin.destroy();
-      return true;
-    });
-
-    this.drawSlashEffect();
-    this.updateHud();
-    this.keepPlayerInPlaySpace();
-
-    if (this.health <= 0) this.endRun();
+    for (const object of this.tracked) object.destroy();
+    this.tracked = [];
+    this.stateObjects = [];
+    this.runnerTiles = [];
+    this.runnerObjects = [];
+    this.bossScraps = [];
+    this.player = undefined as unknown as Phaser.GameObjects.Sprite;
+    this.playerSlash = undefined as unknown as Phaser.GameObjects.Image;
+    this.bossContainer = undefined;
+    this.bossBody = undefined;
+    this.bossLeftArm = undefined;
+    this.bossRightArm = undefined;
+    this.bossCore = undefined;
+    this.feverOverlay = undefined;
+    this.feverText = undefined;
+    this.bossHint = undefined;
+    this.pauseButton = undefined;
+    this.scoreText = undefined;
+    this.heartsText = undefined;
+    this.comboText = undefined;
+    this.coinsText = undefined;
+    this.feverFill = undefined;
+    this.bossFill = undefined;
+    this.bossTimerFill = undefined;
+    this.bossLabel = undefined;
+    this.hintText = undefined;
+    this.feedbackText = undefined;
+    this.paused = false;
+    this.pressStartedAt = -1;
+    this.keyboardPressed = false;
   }
 
-  private createBackground() {
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.ink);
-    const sky = this.add.graphics();
-    sky.fillGradientStyle(0x111a39, 0x111a39, 0x060914, 0x060914, 1);
-    sky.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-
-    this.starLayer = this.add.graphics();
-    for (let i = 0; i < 58; i += 1) {
-      const x = (i * 211) % GAME_WIDTH;
-      const y = 70 + ((i * 83) % 270);
-      const size = i % 7 === 0 ? 3 : 1.5;
-      this.starLayer.fillStyle(i % 3 === 0 ? COLORS.cyan : COLORS.white, i % 4 === 0 ? 0.65 : 0.35);
-      this.starLayer.fillCircle(x, y, size);
-    }
-
-    this.cityFar = this.add.graphics();
-    this.drawCity(this.cityFar, 0x202b50, 0.75, 0);
-    this.cityNear = this.add.graphics();
-    this.drawCity(this.cityNear, 0x11182c, 0.95, 1);
-
-    this.worldFx = this.add.graphics();
-    this.worldFx.fillStyle(COLORS.orange, 0.16);
-    this.worldFx.fillEllipse(260, 595, 360, 80);
-    this.worldFx.fillStyle(COLORS.cyan, 0.1);
-    this.worldFx.fillEllipse(1000, 580, 480, 90);
+  private playMusic(key: string) {
+    if (this.music) this.music.stop();
+    this.music = this.sound.add(key, { loop: true, volume: 0.24 });
+    try { this.music.play(); } catch { /* Browser autoplay is user-gesture gated. */ }
   }
 
-  private drawCity(graphics: Phaser.GameObjects.Graphics, color: number, alpha: number, offset: number) {
-    graphics.fillStyle(color, alpha);
-    for (let x = -50; x < GAME_WIDTH + 100; x += 86 + (offset * 11)) {
-      const height = 90 + ((x * 17 + offset * 53) % 190);
-      graphics.fillRect(x, 585 - height, 60 + offset * 14, height);
-      graphics.fillStyle(offset === 0 ? 0x6ae8ff : 0xff7b22, 0.08);
-      for (let y = 600 - height + 20; y < 575; y += 24) graphics.fillRect(x + 12, y, 9, 4);
-      graphics.fillStyle(color, alpha);
-    }
+  private playSfx(key: string, volume = 0.55) {
+    try { this.sound.play(key, { volume }); } catch { /* Optional audio. */ }
   }
 
-  private animateBackground(delta: number) {
-    if (this.mode !== "playing" || this.paused) return;
-    this.cityFar.x -= delta * 0.005;
-    this.cityNear.x -= delta * 0.012;
-    if (this.cityFar.x < -50) this.cityFar.x = 50;
-    if (this.cityNear.x < -70) this.cityNear.x = 70;
+  private addBackdrop(key: string, darkness = 0) {
+    this.track(this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, key).setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-100));
+    if (darkness > 0) this.track(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.ink, darkness).setDepth(-90));
   }
 
-  private createWorld() {
-    this.platforms = this.physics.add.staticGroup();
-    const floor = this.platforms.create(GAME_WIDTH / 2, 660, "ground") as Phaser.Physics.Arcade.Sprite;
-    floor.setSize(GAME_WIDTH, 120).setOffset(0, 0).refreshBody();
-    floor.setDepth(2);
-
-    const ledgeA = this.platforms.create(610, 485, "ground") as Phaser.Physics.Arcade.Sprite;
-    ledgeA.setScale(0.33, 0.22).setSize(1280, 120).setOffset(0, 0).refreshBody();
-    ledgeA.setDepth(2);
-    const ledgeB = this.platforms.create(1010, 390, "ground") as Phaser.Physics.Arcade.Sprite;
-    ledgeB.setScale(0.22, 0.18).setSize(1280, 120).setOffset(0, 0).refreshBody();
-    ledgeB.setDepth(2);
-
-    this.enemies = this.physics.add.group({ allowGravity: true, collideWorldBounds: false });
-    this.coins = this.physics.add.group({ allowGravity: false, collideWorldBounds: false });
-    this.player = this.physics.add.sprite(250, 520, "player");
-    this.player.setDepth(5).setCollideWorldBounds(true);
-    this.player.setSize(42, 90).setOffset(27, 29);
-
-    this.physics.add.collider(this.player, this.platforms);
-    this.physics.add.collider(this.enemies, this.platforms);
-    this.physics.add.overlap(this.player, this.enemies, (_player, enemy) => this.playerHit(enemy as Phaser.Physics.Arcade.Sprite));
-    this.physics.add.overlap(this.player, this.coins, (_player, coin) => this.collectCoin(coin as Phaser.Physics.Arcade.Sprite));
-
-    this.slashFx = this.add.graphics().setDepth(6);
+  private showIntro() {
+    this.clearScene();
+    this.mode = "intro";
+    this.addBackdrop("introBg", 0.15);
+    this.track(this.add.image(GAME_WIDTH / 2, 350, "logo").setDisplaySize(560, 374).setDepth(5));
+    this.addText(GAME_WIDTH / 2, 560, "TAP TO START", 22, COLORS.white, 0.5, 0.5, 10);
+    this.addText(GAME_WIDTH / 2, 665, "GODOT ASSET CONVERSION  //  PHASER 2D WEB", 12, COLORS.muted, 0.5, 0.5, 10);
+    this.playMusic("lobbyMusic");
   }
 
-  private createHud() {
-    this.hud = this.add.container(0, 0).setDepth(20);
-    const topBar = this.add.rectangle(GAME_WIDTH / 2, 42, GAME_WIDTH - 48, 66, COLORS.surface, 0.78).setStrokeStyle(1, 0x2b385a, 0.8);
-    this.hud.add(topBar);
-    this.addText(this.hud, 56, 22, "SLASHRUSH", 18, COLORS.cyan, "700");
-    this.addText(this.hud, 56, 48, "NEON DISTRICT // RUN 01", 11, COLORS.muted, "600");
-    this.scoreText = this.addText(this.hud, 420, 20, "SCORE 000000", 20, COLORS.white, "700");
-    this.comboText = this.addText(this.hud, 420, 49, "COMBO x0", 12, COLORS.gold, "700");
-    this.healthText = this.addText(this.hud, 740, 32, "♥ ♥ ♥", 20, COLORS.pink, "700");
-    this.pauseButton = this.addText(this.hud, 1178, 19, "Ⅱ", 28, COLORS.white, "700").setOrigin(0.5).setInteractive({ useHandCursor: true });
-    this.pauseButton.on("pointerdown", () => this.togglePause());
-
-    this.hintText = this.addText(this.hud, GAME_WIDTH / 2, 135, "SPACE / TAP TO START", 13, COLORS.muted, "700").setOrigin(0.5);
-  }
-
-  private createTouchControls() {
-    this.touchLabels = this.add.container(0, 0).setDepth(25).setVisible(false);
-    const jump = this.add.rectangle(150, 630, 220, 110, 0x17213e, 0.76).setStrokeStyle(2, COLORS.cyan, 0.48).setInteractive();
-    const slash = this.add.rectangle(1130, 630, 220, 110, 0x2b1835, 0.76).setStrokeStyle(2, COLORS.orange, 0.56).setInteractive();
-    this.touchLabels.add([jump, slash]);
-    this.touchLabels.add(this.addText(this.touchLabels, 150, 630, "JUMP", 18, COLORS.cyan, "800").setOrigin(0.5));
-    this.touchLabels.add(this.addText(this.touchLabels, 1130, 630, "SLASH", 18, COLORS.orange, "800").setOrigin(0.5));
-    jump.on("pointerdown", () => this.jump());
-    slash.on("pointerdown", () => this.slash());
-  }
-
-  private createInput() {
-    this.input.keyboard?.on("keydown-SPACE", () => {
-      if (this.mode === "menu" || this.mode === "gameover") this.startRun();
-      else this.slash();
-    });
-    this.input.keyboard?.on("keydown-UP", () => this.jump());
-    this.input.keyboard?.on("keydown-W", () => this.jump());
-    this.input.keyboard?.on("keydown-X", () => this.slash());
-    this.input.keyboard?.on("keydown-C", () => this.slash());
-    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      if (this.mode === "menu" || this.mode === "gameover") {
-        this.startRun();
-      } else if (pointer.y > 500) {
-        if (pointer.x < GAME_WIDTH / 2) this.jump();
-        else this.slash();
-      }
-    });
+  private animateIntro() {
+    const logo = this.tracked.find((object) => object instanceof Phaser.GameObjects.Image && object.texture.key === "logo") as Phaser.GameObjects.Image | undefined;
+    if (logo) logo.setScale(1 + Math.sin(this.time.now / 470) * 0.035);
   }
 
   private showMenu() {
+    this.clearScene();
     this.mode = "menu";
-    this.touchLabels.setVisible(false);
-    this.stateLayer?.destroy();
-    this.stateLayer = this.add.container(0, 0).setDepth(30);
-    const veil = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.ink, 0.76);
-    const panel = this.add.rectangle(GAME_WIDTH / 2, 372, 560, 320, COLORS.surface, 0.96).setStrokeStyle(2, 0x33456e, 1);
-    const title = this.addText(this.stateLayer, GAME_WIDTH / 2, 260, "SLASHRUSH", 54, COLORS.white, "800").setOrigin(0.5);
-    title.setShadow(0, 5, "#ff7b22", 18, true, true);
-    this.stateLayer.add([veil, panel]);
-    this.stateLayer.bringToTop(title);
-    this.stateLayer.add(this.addText(this.stateLayer, GAME_WIDTH / 2, 326, "CUT THROUGH THE NIGHT", 14, COLORS.orange, "800").setOrigin(0.5));
-    this.stateLayer.add(this.addText(this.stateLayer, GAME_WIDTH / 2, 364, "적을 베고 콤보를 이어 최고 점수를 갱신하세요.", 15, COLORS.muted, "500").setOrigin(0.5));
-    const button = this.add.rectangle(GAME_WIDTH / 2, 444, 250, 58, COLORS.orange, 1).setStrokeStyle(2, 0xffc857, 1).setInteractive({ useHandCursor: true });
-    this.stateLayer.add(button);
-    const label = this.addText(this.stateLayer, GAME_WIDTH / 2, 444, "START RUN", 18, COLORS.ink, "800").setOrigin(0.5);
-    button.on("pointerover", () => button.setFillStyle(COLORS.gold));
-    button.on("pointerout", () => button.setFillStyle(COLORS.orange));
-    button.on("pointerdown", () => this.startRun());
-    this.stateLayer.bringToTop(label);
-    this.stateLayer.add(this.addText(this.stateLayer, GAME_WIDTH / 2, 504, "JUMP  ↑ / W      SLASH  SPACE / X", 12, COLORS.cyan, "700").setOrigin(0.5));
-    this.hintText.setVisible(false);
+    this.addBackdrop("introBg", 0.2);
+    this.track(this.add.image(132, 100, "logo").setDisplaySize(220, 147).setDepth(5));
+    this.track(this.add.image(335, 385, "playerPreview").setDisplaySize(390, 520).setDepth(4));
+    const title = this.addText(960, 150, "SLASH RUSH", 42, COLORS.cream, 0.5, 0.5, 10);
+    title.setShadow(0, 4, "#000000", 8, true, true);
+    this.makeButton("PLAY", 945, 260, 310, 68, () => this.startRunner());
+    this.makeButton("CHARACTER", 945, 356, 310, 68, () => this.showCharacterSelect());
+    this.makeButton("HOW TO", 945, 452, 310, 68, () => this.showHowTo());
+    const settings = this.track(this.add.image(1218, 56, "settingsIcon").setDisplaySize(48, 48).setDepth(10).setInteractive({ useHandCursor: true }));
+    settings.on("pointerdown", () => { this.playSfx("uiClick"); this.showSettingsCard(); });
+    this.addText(640, 670, "COINS: " + this.coins + "    BEST SCORE: " + this.bestScore, 19, COLORS.white, 0.5, 0.5, 10);
+    this.playMusic("lobbyMusic");
   }
 
-  private startRun() {
-    this.mode = "playing";
-    this.paused = false;
-    this.elapsed = 0;
-    this.score = 0;
-    this.combo = 0;
-    this.comboTimer = 0;
-    this.health = 3;
-    this.spawnTimer = 450;
-    this.coinTimer = 1000;
-    this.jumpCount = 0;
-    this.hitCooldown = 0;
-    this.player.setPosition(250, 520).setVelocity(0, 0).clearTint();
-    this.enemies.clear(true, true);
-    this.coins.clear(true, true);
-    this.stateLayer?.destroy();
-    this.touchLabels.setVisible(true);
-    this.hintText.setVisible(false);
-    this.pauseButton.setText("Ⅱ");
+  private makeButton(text: string, x: number, y: number, width: number, height: number, callback: () => void) {
+    const button = this.track(this.add.image(x, y, "menuButton").setDisplaySize(width, height).setDepth(8).setInteractive({ useHandCursor: true }));
+    this.addText(x, y, text, 26, COLORS.white, 0.5, 0.5, 9);
+    button.on("pointerover", () => button.setTint(0xffe3a0));
+    button.on("pointerout", () => button.clearTint());
+    button.on("pointerdown", () => { this.playSfx("uiClick", 0.42); callback(); });
+    return button;
+  }
+
+  private showSettingsCard() {
+    const shade = this.track(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.ink, 0.72).setDepth(40));
+    const panel = this.track(this.add.rectangle(GAME_WIDTH / 2, 360, 500, 310, COLORS.panel, 0.98).setStrokeStyle(2, COLORS.gold, 1).setDepth(41));
+    this.stateObjects.push(shade, panel);
+    this.addText(GAME_WIDTH / 2, 270, "SETTING", 36, COLORS.cream, 0.5, 0.5, 42);
+    this.addText(GAME_WIDTH / 2, 330, "AUDIO  100%", 22, COLORS.white, 0.5, 0.5, 42);
+    this.addText(GAME_WIDTH / 2, 375, "ATTACK VIBRATION  ON", 18, COLORS.muted, 0.5, 0.5, 42);
+    this.addText(GAME_WIDTH / 2, 415, "HURT VIBRATION  ON", 18, COLORS.muted, 0.5, 0.5, 42);
+    this.makeOverlayButton("CLOSE", GAME_WIDTH / 2, 475, 170, 54, () => this.closeOverlayCard());
+  }
+
+  private closeOverlayCard() {
+    for (const object of this.stateObjects) object.destroy();
+    this.stateObjects = [];
+  }
+
+  private makeOverlayButton(text: string, x: number, y: number, width: number, height: number, callback: () => void) {
+    const button = this.track(this.add.rectangle(x, y, width, height, COLORS.gold, 1).setDepth(45).setInteractive({ useHandCursor: true }));
+    const label = this.addText(x, y, text, 18, COLORS.ink, 0.5, 0.5, 46);
+    this.stateObjects.push(button, label);
+    button.on("pointerdown", callback);
+  }
+
+  private showCharacterSelect() {
+    this.clearScene();
+    this.mode = "character";
+    this.track(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x0b0d12, 1).setDepth(-100));
+    this.makeSimpleBackButton(() => this.showMenu());
+    this.addText(GAME_WIDTH / 2, 66, "CHARACTER", 42, COLORS.cream, 0.5, 0.5, 10);
+    this.addText(GAME_WIDTH / 2, 118, "Select your runner", 16, COLORS.muted, 0.5, 0.5, 10);
+    const startX = 172;
+    for (let index = 1; index <= 5; index += 1) this.makeCharacterCard(index, startX + (index - 1) * 220, 350, index === 1);
+    const comingX = startX + 5 * 220;
+    const card = this.track(this.add.rectangle(comingX, 350, 206, 370, COLORS.panel, 1).setStrokeStyle(1, 0x586071, 1).setDepth(2).setInteractive());
+    this.addText(comingX, 300, "?", 90, COLORS.muted, 0.5, 0.5, 4);
+    this.addText(comingX, 418, "+", 28, COLORS.gold, 0.5, 0.5, 4);
+    this.addText(comingX, 515, "COMING SOON", 15, COLORS.muted, 0.5, 0.5, 4);
+    card.on("pointerdown", () => this.showToast("Coming soon"));
+    this.addText(GAME_WIDTH / 2, 655, "More characters will be available in future versions.", 16, COLORS.muted, 0.5, 0.5, 10);
+  }
+
+  private makeCharacterCard(index: number, x: number, y: number, selected: boolean) {
+    const fill = selected ? 0x17130b : 0x151923;
+    const stroke = selected ? COLORS.gold : 0x424754;
+    const card = this.track(this.add.rectangle(x, y, 206, 370, fill, 1).setStrokeStyle(selected ? 4 : 1, stroke, 1).setDepth(2).setInteractive());
+    this.track(this.add.rectangle(x, y - 45, 178, 252, 0xffffff, 1).setDepth(3));
+    const portrait = this.track(this.add.image(x, y - 45, "character" + index).setDisplaySize(178, 252).setDepth(4));
+    if (index !== 1) {
+      this.track(this.add.rectangle(x, y - 45, 178, 252, COLORS.ink, 0.58).setDepth(5));
+      this.addText(x, y - 45, "LOCKED", 24, COLORS.white, 0.5, 0.5, 6);
+    }
+    this.addText(x, y - 168, "PLAYER " + index, 18, selected ? COLORS.cream : COLORS.white, 0.5, 0.5, 6);
+    this.track(this.add.rectangle(x, y + 143, 170, 38, selected ? COLORS.gold : 0x1e2430, 1).setDepth(3));
+    this.addText(x, y + 143, selected ? "SELECTED" : "LOCKED", 14, selected ? COLORS.ink : COLORS.muted, 0.5, 0.5, 6);
+    card.on("pointerdown", () => this.showToast(index === 1 ? "Selected" : "Coming soon"));
+    portrait.setData("characterId", index);
+  }
+
+  private showHowTo() {
+    this.clearScene();
+    this.mode = "howto";
+    this.track(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x0b0d12, 1).setDepth(-100));
+    this.makeSimpleBackButton(() => this.showMenu());
+    this.addText(GAME_WIDTH / 2, 65, "HOW TO PLAY", 42, COLORS.cream, 0.5, 0.5, 10);
+    const cards = [
+      ["TAP", "enemyBasic", "기본 몬스터와 폭탄은\n한 번 탭해서 제거하세요.", COLORS.gold],
+      ["TAP TAP", "enemyFast", "빠른 몬스터는\n두 번 연속 공격하세요.", 0xff7d6e],
+      ["HOLD", "enemyArmor", "갑옷 몬스터는\n길게 눌러 처리하세요.", COLORS.blue],
+      ["ITEMS", "feverOrb", "Coin / Fever Orb / Heal은\n베지 말고 통과 수집하세요.", COLORS.green],
+    ] as const;
+    cards.forEach(([title, key, description, color], index) => {
+      const x = 205 + index * 290;
+      this.track(this.add.rectangle(x, 365, 258, 390, COLORS.panel, 1).setStrokeStyle(2, color, 1).setDepth(2));
+      this.addText(x, 218, title, 28, color, 0.5, 0.5, 6);
+      this.track(this.add.image(x, 350, key).setDisplaySize(145, 145).setDepth(4));
+      this.addText(x, 500, description, 17, COLORS.white, 0.5, 0.5, 6).setLineSpacing(8);
+    });
+    this.addText(GAME_WIDTH / 2, 670, "Success builds COMBO and FEVER. A short robot samurai boss battle follows the 60 second runner.", 15, COLORS.muted, 0.5, 0.5, 10);
+  }
+
+  private makeSimpleBackButton(callback: () => void) {
+    const button = this.track(this.add.text(58, 46, "< BACK", {
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "20px",
+      color: "#f7f4ed",
+      stroke: "#070a11",
+      strokeThickness: 3,
+    }).setOrigin(0, 0.5).setDepth(12).setInteractive({ useHandCursor: true }));
+    button.on("pointerdown", () => { this.playSfx("uiClick", 0.4); callback(); });
+  }
+
+  private showToast(message: string) {
+    const toast = this.track(this.add.text(GAME_WIDTH / 2, 610, message, {
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "22px",
+      color: "#ffefc0",
+      backgroundColor: "#151923",
+      padding: { left: 22, right: 22, top: 12, bottom: 12 },
+    }).setOrigin(0.5).setDepth(30));
+    this.tweens.add({ targets: toast, alpha: 0, y: 585, delay: 650, duration: 250, onComplete: () => toast.destroy() });
+  }
+
+  private registerAlphaKeyPipeline() {
+    if (this.game.renderer.type !== Phaser.WEBGL) return;
+    const renderer = this.game.renderer as Phaser.Renderer.WebGL.WebGLRenderer;
+    if (renderer.pipelines.get("SlashRushAlphaKey")) return;
+    const fragmentShader = [
+      "#define SHADER_NAME SLASH_RUSH_ALPHA_KEY_FS",
+      "#ifdef GL_FRAGMENT_PRECISION_HIGH",
+      "precision highp float;",
+      "#else",
+      "precision mediump float;",
+      "#endif",
+      "uniform sampler2D uMainSampler;",
+      "varying vec2 outTexCoord;",
+      "varying float outTintEffect;",
+      "varying vec4 outTint;",
+      "void main () {",
+      "  vec4 texture = texture2D(uMainSampler, outTexCoord);",
+      "  float maxChannel = max(max(texture.r, texture.g), texture.b);",
+      "  float minChannel = min(min(texture.r, texture.g), texture.b);",
+      "  if (minChannel > 0.86 && (maxChannel - minChannel) < 0.045) texture.a = 0.0;",
+      "  vec4 texel = vec4(outTint.bgr * outTint.a, outTint.a);",
+      "  vec4 color = texture * texel;",
+      "  if (outTintEffect == 1.0) color.rgb = mix(texture.rgb, outTint.bgr * outTint.a, texture.a);",
+      "  else if (outTintEffect == 2.0) color = texel;",
+      "  gl_FragColor = color;",
+      "}",
+    ].join("\n");
+    renderer.pipelines.add("SlashRushAlphaKey", new Phaser.Renderer.WebGL.Pipelines.SinglePipeline({
+      game: this.game,
+      name: "SlashRushAlphaKey",
+      fragShader: fragmentShader,
+    }));
+  }
+
+  private prepareAlphaKeyTexture(sourceKey: string, targetKey: string) {
+    if (this.textures.exists(targetKey)) return;
+    const source = this.textures.get(sourceKey).getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+    const canvas = document.createElement("canvas");
+    canvas.width = source.width;
+    canvas.height = source.height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return;
+    context.drawImage(source, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    for (let index = 0; index < pixels.data.length; index += 4) {
+      const red = pixels.data[index];
+      const green = pixels.data[index + 1];
+      const blue = pixels.data[index + 2];
+      const maximum = Math.max(red, green, blue);
+      const minimum = Math.min(red, green, blue);
+      if (maximum > 219 && maximum - minimum < 12) pixels.data[index + 3] = 0;
+    }
+    context.putImageData(pixels, 0, 0);
+    this.textures.addCanvas(targetKey, canvas);
+  }
+
+  private buildRunnerBackground() {
+    this.registerAlphaKeyPipeline();
+    ["clouds", "farMountains", "midStructures", "nearForeground", "ground"].forEach((key) => this.prepareAlphaKeyTexture(key, key + "Keyed"));
+    // The Godot sky texture carries a transparent color-key in some exports.
+    // Keep it in the stack, but provide the same green-to-gold sky underneath
+    // so the browser never exposes the canvas' default white clear color.
+    const skyFallback = this.track(this.add.graphics().setDepth(-110));
+    skyFallback.fillGradientStyle(0x78d85e, 0x78d85e, 0xf0c65b, 0xf0c65b, 1);
+    skyFallback.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    // `sky_static.png` is exported with a white matte in the downloaded
+    // Godot package, so the browser uses the matching gradient fallback
+    // above and keeps the parallax art layers transparent over it.
+    const clouds = this.track(this.add.tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, "cloudsKeyed").setOrigin(0).setDepth(-90));
+    clouds.setTileScale(0.68, 0.68);
+    const far = this.track(this.add.tileSprite(0, -120, GAME_WIDTH, GAME_HEIGHT, "farMountainsKeyed").setOrigin(0).setDepth(-80));
+    far.setTileScale(0.995, 0.995);
+    const mid = this.track(this.add.tileSprite(0, -120, GAME_WIDTH, GAME_HEIGHT, "midStructuresKeyed").setOrigin(0).setDepth(-70));
+    mid.setTileScale(0.995, 0.995);
+    const near = this.track(this.add.tileSprite(0, -120, GAME_WIDTH, GAME_HEIGHT, "nearForegroundKeyed").setOrigin(0).setDepth(-60));
+    near.setTileScale(0.995, 0.995);
+    const ground = this.track(this.add.tileSprite(0, 278, GAME_WIDTH, 720, "groundKeyed").setOrigin(0).setDepth(0));
+    ground.setTileScale(1.27, 1.27);
+    this.runnerTiles = [clouds, far, mid, near, ground];
+  }
+
+  private buildHud(boss = false) {
+    this.track(this.add.rectangle(GAME_WIDTH / 2, 38, GAME_WIDTH - 36, 74, 0x090c16, 0.36).setDepth(15));
+    this.scoreText = this.addText(28, 27, "SCORE 000000", 24, COLORS.white, 0, 0.5, 20);
+    this.heartsText = this.addText(282, 27, "♥ ♥ ♥", 28, 0xff5b6d, 0, 0.5, 20);
+    this.comboText = this.addText(440, 27, "COMBO 0", 23, COLORS.cream, 0, 0.5, 20);
+    this.coinsText = this.addText(600, 27, "COIN 0", 23, COLORS.gold, 0, 0.5, 20);
+    this.track(this.add.rectangle(782, 28, 264, 22, COLORS.ink, 0.48).setOrigin(0, 0.5).setDepth(19));
+    this.feverFill = this.track(this.add.rectangle(784, 28, 0, 16, COLORS.cyan, 1).setOrigin(0, 0.5).setDepth(20));
+    this.addText(786, 54, "FEVER", 14, COLORS.white, 0, 0.5, 20);
+    this.feedbackText = this.addText(GAME_WIDTH / 2, 144, "", 42, COLORS.white, 0.5, 0.5, 25);
+    this.feedbackText.setAlpha(0);
+    this.hintText = this.addText(GAME_WIDTH / 2, 672, boss ? "" : "TAP / TAP TAP / HOLD  //  DON'T CUT ITEMS", 20, COLORS.white, 0.5, 0.5, 20);
+    this.pauseButton = this.addText(1218, 30, "Ⅱ", 28, COLORS.white, 0.5, 0.5, 25).setInteractive({ useHandCursor: true });
+    this.pauseButton.on("pointerdown", () => this.togglePause());
+    if (boss) {
+      this.track(this.add.rectangle(956, 84, 304, 20, COLORS.ink, 0.55).setOrigin(0, 0.5).setDepth(19));
+      this.bossFill = this.track(this.add.rectangle(958, 84, 300, 16, COLORS.red, 1).setOrigin(0, 0.5).setDepth(20));
+      this.bossLabel = this.addText(956, 110, "BOSS 10/10", 18, COLORS.white, 0, 0.5, 20);
+      this.track(this.add.rectangle(956, 142, 304, 14, COLORS.ink, 0.32).setOrigin(0, 0.5).setDepth(19));
+      this.bossTimerFill = this.track(this.add.rectangle(958, 144, 300, 10, COLORS.white, 1).setOrigin(0, 0.5).setDepth(20));
+    }
     this.updateHud();
   }
 
-  private spawnEnemy() {
-    const y = Math.random() > 0.76 ? 305 : 530;
-    const enemy = this.enemies.create(GAME_WIDTH + 70, y, "enemy") as Phaser.Physics.Arcade.Sprite;
-    enemy.setDepth(5).setSize(50, 72).setOffset(20, 28);
-    enemy.setVelocityX(-340).setBounce(0, 0);
-    enemy.setData("hp", 1);
-  }
-
-  private spawnCoinLine() {
-    const y = 320 + Math.floor(Math.random() * 3) * 90;
-    for (let i = 0; i < 3; i += 1) {
-      const coin = this.coins.create(GAME_WIDTH + 40 + i * 54, y - Math.sin(i * 1.5) * 30, "coin") as Phaser.Physics.Arcade.Sprite;
-      coin.setDepth(4).setCircle(16, 8, 8);
-      coin.setVelocityX(-340);
-    }
-  }
-
-  private jump() {
-    if (this.mode === "menu" || this.mode === "gameover") {
-      this.startRun();
-      return;
-    }
-    if (this.paused) return;
-    const body = this.player.body as Phaser.Physics.Arcade.Body;
-    const grounded = body.blocked.down || body.touching.down;
-    if (grounded) this.jumpCount = 0;
-    if (grounded || this.jumpCount < 1) {
-      this.player.setVelocityY(-650);
-      this.jumpCount += 1;
-    }
-  }
-
-  private slash() {
-    if (this.mode === "menu" || this.mode === "gameover") {
-      this.startRun();
-      return;
-    }
-    if (this.paused) return;
-    this.slashTimer = 240;
-    this.player.setTint(0xfff3a5);
-    this.time.delayedCall(130, () => this.player.clearTint());
-    this.enemies.children.each((child) => {
-      const enemy = child as Phaser.Physics.Arcade.Sprite;
-      if (!enemy.active) return true;
-      const inRange = enemy.x > this.player.x - 20 && enemy.x < this.player.x + 190 && Math.abs(enemy.y - this.player.y) < 145;
-      if (inRange) this.defeatEnemy(enemy);
-      return true;
-    });
-  }
-
-  private defeatEnemy(enemy: Phaser.Physics.Arcade.Sprite) {
-    if (!enemy.active) return;
-    enemy.disableBody(true, true);
-    this.combo = clamp(this.combo + 1, 0, 12);
-    this.comboTimer = 1800;
-    this.score += scoreForDefeat(this.combo);
-    const burst = this.add.particles(enemy.x, enemy.y, "coin", {
-      speed: { min: 80, max: 220 },
-      lifespan: 280,
-      quantity: 8,
-      scale: { start: 0.45, end: 0 },
-      tint: [COLORS.orange, COLORS.gold, COLORS.cyan],
-      emitting: false,
-    }).setDepth(7);
-    burst.explode(8, enemy.x, enemy.y);
-    this.time.delayedCall(400, () => burst.destroy());
-  }
-
-  private playerHit(enemy: Phaser.Physics.Arcade.Sprite) {
-    if (this.hitCooldown > 0 || !enemy.active || this.slashTimer > 0) return;
-    this.hitCooldown = 1200;
-    this.health -= 1;
-    this.combo = 0;
-    this.player.setTint(COLORS.pink);
-    this.tweens.add({ targets: this.player, alpha: 0.25, duration: 80, yoyo: true, repeat: 5 });
-    enemy.disableBody(true, true);
-    this.cameras.main.shake(160, 0.006);
-  }
-
-  private collectCoin(coin: Phaser.Physics.Arcade.Sprite) {
-    if (!coin.active) return;
-    coin.disableBody(true, true);
-    this.score += 25;
-    this.comboTimer = Math.max(this.comboTimer, 900);
-  }
-
-  private drawSlashEffect() {
-    this.slashFx.clear();
-    if (this.slashTimer <= 0) return;
-    const progress = 1 - this.slashTimer / 240;
-    this.slashFx.lineStyle(18, COLORS.orange, 0.2);
-    this.slashFx.beginPath();
-    this.slashFx.arc(this.player.x + 44, this.player.y - 6, 118, -1.2 + progress * 0.3, 0.45 + progress * 0.3, false, 24);
-    this.slashFx.strokePath();
-    this.slashFx.lineStyle(5, COLORS.gold, 1);
-    this.slashFx.beginPath();
-    this.slashFx.arc(this.player.x + 44, this.player.y - 6, 118, -1.2 + progress * 0.3, 0.45 + progress * 0.3, false, 24);
-    this.slashFx.strokePath();
-  }
-
-  private keepPlayerInPlaySpace() {
-    this.player.x = clamp(this.player.x, 160, 420);
-    if (this.player.y > GAME_HEIGHT + 100) this.health = 0;
-  }
-
   private updateHud() {
-    this.scoreText?.setText(`SCORE ${String(this.score).padStart(6, "0")}`);
-    this.comboText?.setText(`COMBO x${comboMultiplier(this.combo)}  //  ${this.combo}`);
-    this.healthText?.setText(`${this.health >= 1 ? "♥" : "♡"} ${this.health >= 2 ? "♥" : "♡"} ${this.health >= 3 ? "♥" : "♡"}`);
+    this.scoreText?.setText("SCORE " + String(this.score).padStart(6, "0"));
+    const hearts = [0, 1, 2].map((index) => index < this.health ? "♥" : "♡").join(" ");
+    this.heartsText?.setText(hearts);
+    this.comboText?.setText(this.mode === "boss" ? "COMBO " + this.bossCombo : "COMBO " + this.combo);
+    this.coinsText?.setText(this.mode === "boss" ? "" : "COIN " + this.coins);
+    this.feverFill?.setSize(260 * clamp(this.fever / MAX_FEVER, 0, 1), 16);
+    if (this.mode === "boss") {
+      this.bossFill?.setSize(300 * clamp(this.bossHp / BOSS_MAX_HP, 0, 1), 16);
+      this.bossLabel?.setText("BOSS " + this.bossHp + "/" + BOSS_MAX_HP);
+      this.bossTimerFill?.setSize(300 * this.bossTimerRatio(), 10);
+    }
+  }
+
+  private createRunnerPlayer() {
+    this.player = this.track(this.add.sprite(210, 610, "playerRun1").setOrigin(0.5, 1).setDisplaySize(231, 230).setDepth(5));
+    this.playerSlash = this.track(this.add.image(318, 520, "swordSlash").setDisplaySize(245, 139).setDepth(6).setAlpha(0));
+    this.playerSlash.setRotation(Phaser.Math.DegToRad(20));
+  }
+
+  private startRunner() {
+    this.clearScene();
+    this.mode = "runner";
+    this.score = 0;
+    this.coins = Number(localStorage.getItem("slashrush-coins") || 0);
+    this.combo = 0;
+    this.health = STARTING_HP;
+    this.fever = 0;
+    this.feverActive = false;
+    this.feverTimeLeft = 0;
+    this.runnerElapsed = 0;
+    this.schedule = buildRunnerSchedule();
+    this.scheduleIndex = 0;
+    this.buildRunnerBackground();
+    this.createRunnerPlayer();
+    this.buildHud();
+    this.feverOverlay = this.track(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.cyan, 0.12).setDepth(12).setVisible(false));
+    this.feverText = this.addText(GAME_WIDTH / 2, 220, "TAP!!", 74, COLORS.cream, 0.5, 0.5, 24);
+    this.feverText.setVisible(false);
+    this.playMusic("runningMusic");
+    this.playSfx("startGame", 0.55);
+    this.updateHud();
+  }
+
+  private updateRunner(seconds: number) {
+    this.runnerElapsed += seconds;
+    this.playerFrameTimer += seconds;
+    this.slashTimer = Math.max(0, this.slashTimer - seconds);
+    this.playerHurtTimer = Math.max(0, this.playerHurtTimer - seconds);
+    this.feedbackTimer = Math.max(0, this.feedbackTimer - seconds);
+    if (this.playerFrameTimer >= 1 / 12) {
+      this.playerFrameTimer = 0;
+      this.playerFrame = (this.playerFrame + 1) % 4;
+      this.player.setTexture("playerRun" + (this.playerFrame + 1));
+    }
+    if (this.slashTimer <= 0) this.playerSlash.setAlpha(0);
+    if (this.feedbackTimer <= 0) this.feedbackText?.setAlpha(0);
+    this.runnerTiles.forEach((tile, index) => {
+      const speed = [0.02, 0.24, 0.58, 1.12, 2.05][index] || 1;
+      tile.tilePositionX += 780 * speed * seconds;
+    });
+    while (this.scheduleIndex < this.schedule.length && this.schedule[this.scheduleIndex].time <= this.runnerElapsed) {
+      this.spawnRunnerObject(this.schedule[this.scheduleIndex].type);
+      this.scheduleIndex += 1;
+    }
+    if (this.feverActive) {
+      this.feverTimeLeft -= seconds;
+      this.feverSpawnTimer -= seconds;
+      if (this.feverSpawnTimer <= 0 && this.feverTimeLeft > 1) {
+        this.feverSpawnTimer = 0.18;
+        this.spawnRunnerObject(["enemy_basic", "enemy_basic", "enemy_fast", "bomb"][Phaser.Math.Between(0, 3)] as RunnerObjectType, true);
+      }
+      if (this.feverTimeLeft <= 0) this.endFever();
+      this.feverText?.setScale(1 + Math.sin(this.time.now / 80) * 0.12);
+    }
+    const speed = this.feverActive ? 840 : 420;
+    for (const object of [...this.runnerObjects]) {
+      if (object.handled) continue;
+      object.x -= speed * seconds;
+      object.sprite.x = object.x;
+      if (object.rule.good) object.sprite.y = object.baseY + Math.sin(this.time.now / 160 + object.phase) * 5;
+      else {
+        const jump = Math.abs(Math.sin(this.time.now / (object.type === "enemy_fast" ? 230 : 330) + object.phase));
+        object.sprite.y = object.baseY - jump * (object.type === "enemy_fast" ? 22 : object.type === "enemy_armor" ? 10 : 16);
+      }
+      if (object.x < 200) this.handlePassedObject(object);
+    }
+    if (this.runnerElapsed >= RUNNER_DURATION) {
+      this.startBoss();
+      return;
+    }
+    this.updateHud();
+  }
+
+  private spawnRunnerObject(type: RunnerObjectType, feverSpawn = false) {
+    const rule = OBJECT_RULES[type];
+    const sprite = this.track(this.add.image(1400, 610 + rule.yOffset, rule.key).setOrigin(0.5, 1).setDepth(4));
+    const texture = this.textures.get(rule.key).getSourceImage() as HTMLImageElement;
+    sprite.setDisplaySize(rule.height * (texture.width / texture.height), rule.height);
+    if (rule.good) sprite.setDepth(3);
+    if (feverSpawn) sprite.setTint(0xc7faff);
+    this.runnerObjects.push({ type, rule, sprite, x: 1400, baseY: 610 + rule.yOffset, phase: Math.random() * Math.PI * 2, handled: false });
+  }
+
+  private handlePassedObject(object: RunnerObject) {
+    if (object.handled) return;
+    if (this.feverActive) { this.removeRunnerObject(object); return; }
+    if (object.rule.good) this.collectGoodItem(object);
+    else this.failObject(object, false);
+  }
+
+  private nearestActionObject() {
+    return this.runnerObjects.filter((object) => !object.handled && object.x >= 270 && object.x <= 510)
+      .sort((left, right) => Math.abs(left.x - 390) - Math.abs(right.x - 390))[0];
+  }
+
+  private handleRunnerAction(action: SlashAction) {
+    if (this.playerHurtTimer > 0) return;
+    this.playPlayerSlash(action === "long_tap");
+    const target = this.feverActive
+      ? this.runnerObjects.filter((object) => !object.handled && object.x >= 270 && object.x <= 510)
+      : [this.nearestActionObject()].filter(Boolean) as RunnerObject[];
+    if (target.length === 0) return;
+    for (const object of target) {
+      if (object.rule.good) {
+        if (this.feverActive) this.collectFeverGoodItem(object);
+        else this.breakGoodItem(object);
+      } else if (actionMatches(object.rule.required, action, this.feverActive)) {
+        this.successObject(object);
+      } else if (object.rule.required === "double_tap" && action === "tap") {
+        this.showFeedback("TAP TAP!", COLORS.gold);
+      } else if (object.rule.required === "long_tap" && action === "tap") {
+        this.showFeedback("HOLD!", COLORS.blue);
+      } else {
+        this.failObject(object, true);
+      }
+    }
+  }
+
+  private playPlayerSlash(strong = false) {
+    this.slashTimer = strong ? 0.34 : 0.2;
+    this.playerSlash.setPosition(318, strong ? 505 : 520).setAlpha(1).setScale(strong ? 1.12 : 1);
+    this.tweens.add({ targets: this.playerSlash, alpha: 0, duration: this.slashTimer * 1000, ease: "Cubic.Out" });
+    this.playSfx("slashSfx", 0.35);
+  }
+
+  private successObject(object: RunnerObject) {
+    if (object.handled) return;
+    object.handled = true;
+    const multiplier = this.feverActive ? 2 : scoreMultiplier(this.combo);
+    this.score += object.rule.score * multiplier;
+    if (!this.feverActive) this.fever = clamp(this.fever + object.rule.fever, 0, MAX_FEVER);
+    this.combo += 1;
+    if (this.fever >= MAX_FEVER) this.startFever();
+    this.spawnSlicePieces(object);
+    this.showFeedback("+" + object.rule.score * multiplier, COLORS.white);
+    this.removeRunnerObject(object, false);
+    this.cameras.main.shake(50, 0.0025);
+    this.updateHud();
+  }
+
+  private failObject(object: RunnerObject, sliced: boolean) {
+    if (object.handled) return;
+    object.handled = true;
+    if (this.feverActive) { this.removeRunnerObject(object); return; }
+    this.combo = 0;
+    this.health -= 1;
+    if (sliced) this.spawnSlicePieces(object, 0xc83f3f);
+    this.showFeedback(sliced ? "MISS!" : "-HP", COLORS.red);
+    this.playerHurtTimer = 0.4;
+    this.player.setTexture("playerDamage").setTint(0xff6b6b);
+    this.time.delayedCall(400, () => {
+      if (this.mode === "runner") this.player.setTexture("playerRun" + (this.playerFrame + 1)).clearTint();
+    });
+    this.removeRunnerObject(object, false);
+    this.cameras.main.shake(160, 0.006);
+    if (this.health <= 0) this.finishResult(false);
+    this.updateHud();
+  }
+
+  private collectGoodItem(object: RunnerObject) {
+    if (object.handled) return;
+    object.handled = true;
+    this.playSfx("pickupSfx", 0.42);
+    if (object.type === "coin") {
+      this.coins += object.rule.score;
+      this.score += object.rule.score;
+      this.showFeedback("+20", COLORS.gold);
+    } else if (object.type === "heal") {
+      const healed = this.health < MAX_HP;
+      if (healed) this.health += 1;
+      this.showFeedback(healed ? "+HP" : "MAX", COLORS.green);
+    } else if (object.type === "fever_orb") {
+      this.score += object.rule.score;
+      this.fever = MAX_FEVER;
+      this.startFever();
+    }
+    this.removeRunnerObject(object);
+    this.updateHud();
+  }
+
+  private collectFeverGoodItem(object: RunnerObject) {
+    if (object.handled) return;
+    object.handled = true;
+    this.coins += 20;
+    this.score += 40;
+    this.showFeedback("+20", COLORS.gold);
+    this.removeRunnerObject(object);
+  }
+
+  private breakGoodItem(object: RunnerObject) {
+    if (object.handled) return;
+    object.handled = true;
+    this.combo = 0;
+    this.fever = Math.max(0, this.fever - 18);
+    this.spawnSlicePieces(object, object.rule.tint);
+    this.showFeedback("BROKEN!", COLORS.gold);
+    this.removeRunnerObject(object, false);
+    this.updateHud();
+  }
+
+  private removeRunnerObject(object: RunnerObject, destroy = true) {
+    if (destroy) object.sprite.destroy();
+    this.runnerObjects = this.runnerObjects.filter((candidate) => candidate !== object);
+    this.tracked = this.tracked.filter((candidate) => candidate !== object.sprite);
+  }
+
+  private spawnSlicePieces(object: RunnerObject, tint?: number) {
+    const x = object.x;
+    const y = object.sprite.y - object.rule.height * 0.5;
+    const key = object.rule.sliceKey;
+    const source = this.textures.get(key).getSourceImage() as HTMLImageElement;
+    const left = this.track(this.add.image(x - 14, y, key).setOrigin(0.5, 0.5).setDisplaySize(object.rule.height * 0.48, object.rule.height).setDepth(8));
+    const right = this.track(this.add.image(x + 14, y, key).setOrigin(0.5, 0.5).setDisplaySize(object.rule.height * 0.48, object.rule.height).setDepth(8));
+    left.setCrop(0, 0, source.width / 2, source.height);
+    right.setCrop(source.width / 2, 0, source.width / 2, source.height);
+    if (tint) { left.setTint(tint); right.setTint(tint); }
+    this.tweens.add({ targets: left, x: x - 115, y: y - 100, angle: -28, alpha: 0, duration: 620, onComplete: () => left.destroy() });
+    this.tweens.add({ targets: right, x: x + 115, y: y - 50, angle: 28, alpha: 0, duration: 620, onComplete: () => right.destroy() });
+  }
+
+  private startFever() {
+    if (this.feverActive) return;
+    this.feverActive = true;
+    this.feverTimeLeft = FEVER_DURATION;
+    this.feverSpawnTimer = 0;
+    this.fever = MAX_FEVER;
+    this.runnerObjects.forEach((object) => { object.handled = true; object.sprite.destroy(); });
+    this.runnerObjects = [];
+    this.feverOverlay?.setVisible(true);
+    this.feverText?.setVisible(true);
+    this.showFeedback("FEVER!", COLORS.cyan);
+  }
+
+  private endFever() {
+    this.feverActive = false;
+    this.fever = 0;
+    this.feverOverlay?.setVisible(false);
+    this.feverText?.setVisible(false);
+    this.showFeedback("FEVER END", COLORS.white);
+  }
+
+  private showFeedback(text: string, color: number) {
+    if (!this.feedbackText) return;
+    this.feedbackText.setText(text).setColor("#" + color.toString(16).padStart(6, "0")).setAlpha(1).setScale(1.12);
+    this.feedbackTimer = 0.75;
+    this.tweens.add({ targets: this.feedbackText, scale: 1, duration: 120 });
+  }
+
+  private startBoss() {
+    this.clearScene();
+    this.mode = "boss";
+    this.bossHp = BOSS_MAX_HP;
+    this.bossCombo = 0;
+    this.bossPatternIndex = 0;
+    this.bossAction = null;
+    this.bossNextDelay = 0;
+    this.bossFever = 0;
+    this.bossFeverActive = false;
+    this.bossFeverTimeLeft = 0;
+    this.track(this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, "bossBackground").setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-100));
+    this.createRunnerPlayer();
+    this.buildBossVisual();
+    this.buildHud(true);
+    this.bossHint = this.addText(GAME_WIDTH / 2, 530, "TAP", 48, COLORS.white, 0.5, 0.5, 24);
+    this.bossCueOne = this.track(this.add.image(590, 575, "circle3").setDisplaySize(108, 108).setDepth(23));
+    this.bossCueTwo = this.track(this.add.image(690, 575, "circle3").setDisplaySize(108, 108).setDepth(23));
+    this.bossWaitCue = this.track(this.add.image(640, 575, "waitCue").setDisplaySize(112, 112).setDepth(23));
+    this.playMusic("bossMusic");
+    this.showFeedback("BOSS", COLORS.cream);
+    this.nextBossPattern();
+  }
+
+  private buildBossVisual() {
+    this.bossContainer = this.track(this.add.container(970, 580).setScale(0.8).setDepth(5));
+    const aura = this.add.circle(0, -275, 235, 0x4e3fca, 0.1);
+    const body = this.add.image(-8, -245, "bossBody").setDisplaySize(390, 470).setOrigin(0.5, 1);
+    const leftArm = this.add.image(-175, -230, "bossLeftArm").setDisplaySize(145, 260).setOrigin(0.5, 1);
+    const rightArm = this.add.image(170, -230, "bossRightArm").setDisplaySize(155, 260).setOrigin(0.5, 1);
+    const leftSword = this.add.image(-215, -260, "bossSword").setDisplaySize(105, 185).setAngle(-12);
+    const rightSword = this.add.image(215, -260, "bossSword").setDisplaySize(105, 185).setAngle(12);
+    const head = this.add.image(6, -480, "bossHead").setDisplaySize(195, 215).setOrigin(0.5, 1);
+    const core = this.add.image(0, -260, "bossCore").setDisplaySize(82, 80);
+    this.bossContainer.add([aura, body, leftArm, rightArm, leftSword, rightSword, head, core]);
+    this.bossBody = body;
+    this.bossLeftArm = leftArm;
+    this.bossRightArm = rightArm;
+    this.bossCore = core;
+  }
+
+  private updateBoss(seconds: number) {
+    this.playerFrameTimer += seconds;
+    this.playerHurtTimer = Math.max(0, this.playerHurtTimer - seconds);
+    if (this.playerFrameTimer >= 1 / 12) {
+      this.playerFrameTimer = 0;
+      this.playerFrame = (this.playerFrame + 1) % 4;
+      this.player.setTexture("playerRun" + (this.playerFrame + 1));
+    }
+    if (this.bossFeverActive) {
+      this.bossFeverTimeLeft -= seconds;
+      if (this.bossFeverTimeLeft <= 0) {
+        this.bossFeverActive = false;
+        this.bossFever = 0;
+        this.showFeedback("FEVER END", COLORS.white);
+      }
+    }
+    if (this.bossNextDelay > 0) {
+      this.bossNextDelay -= seconds;
+      if (this.bossNextDelay <= 0 && this.bossHp > 0 && this.health > 0) this.nextBossPattern();
+      this.animateBoss();
+      this.updateHud();
+      return;
+    }
+    if (this.bossAction) {
+      this.bossPatternTime -= seconds;
+      if (this.bossPatternTime <= 0) {
+        if (this.bossAction === "no_input" || this.bossFeverActive) this.successBossPattern(true);
+        else this.failBossPattern("MISS");
+      }
+    }
+    this.animateBoss();
+    this.updateHud();
+  }
+
+  private animateBoss() {
+    if (!this.bossContainer) return;
+    this.bossContainer.y = 615 + Math.sin(this.time.now / 550) * 4;
+    if (this.bossAction === "tap") this.bossRightArm?.setAngle(Math.sin(this.time.now / 130) * 14);
+    else if (this.bossAction === "double_tap") {
+      this.bossLeftArm?.setAngle(Math.sin(this.time.now / 105) * 18);
+      this.bossRightArm?.setAngle(-Math.sin(this.time.now / 105) * 18);
+    } else if (this.bossAction === "long_tap") this.bossCore?.setScale(1 + Math.sin(this.time.now / 90) * 0.16);
+  }
+
+  private nextBossPattern() {
+    if (this.bossHp <= 0) { this.finishResult(true); return; }
+    const pool: RequiredAction[] = this.bossHp <= BOSS_MAX_HP / 2
+      ? ["double_tap", "long_tap", "no_input", "double_tap", "long_tap", "tap"]
+      : ["tap", "double_tap", "long_tap", "no_input", "tap", "double_tap"];
+    this.bossAction = pool[this.bossPatternIndex % pool.length];
+    this.bossPatternIndex += 1;
+    this.bossPatternTime = this.bossAction === "tap" ? 1.85 : this.bossAction === "double_tap" ? 2 : this.bossAction === "long_tap" ? 2.2 : 1.8;
+    this.showBossCue(this.bossAction);
+  }
+
+  private showBossCue(action: RequiredAction) {
+    const color = action === "no_input" ? COLORS.red : action === "double_tap" ? COLORS.gold : action === "long_tap" ? COLORS.blue : COLORS.white;
+    this.bossHint?.setText(actionHint(action)).setColor("#" + color.toString(16).padStart(6, "0"));
+    this.bossCueOne?.setVisible(action === "tap" || action === "double_tap" || action === "long_tap");
+    this.bossCueTwo?.setVisible(action === "double_tap");
+    this.bossWaitCue?.setVisible(action === "no_input");
+  }
+
+  private bossTimerRatio() {
+    if (this.bossFeverActive) return clamp(this.bossFeverTimeLeft / 5, 0, 1);
+    const total = this.bossAction === "tap" ? 1.85 : this.bossAction === "double_tap" ? 2 : this.bossAction === "long_tap" ? 2.2 : 1.8;
+    return this.bossPatternTime <= 0 ? 0 : clamp(this.bossPatternTime / total, 0, 1);
+  }
+
+  private handleBossAction(action: SlashAction) {
+    if (!this.bossAction || this.playerHurtTimer > 0) return;
+    this.playPlayerSlash(action === "long_tap");
+    if (this.bossFeverActive || actionMatches(this.bossAction, action)) this.successBossPattern(false);
+    else if ((this.bossAction === "double_tap" || this.bossAction === "long_tap") && action === "tap") this.showFeedback(actionHint(this.bossAction), this.bossAction === "double_tap" ? COLORS.gold : COLORS.blue);
+    else this.failBossPattern("WRONG");
+  }
+
+  private successBossPattern(fromTimeout: boolean) {
+    if (!this.bossAction) return;
+    this.bossHp -= 1;
+    this.score += this.bossFeverActive ? 400 : 200;
+    if (!this.bossFeverActive) {
+      this.bossCombo += 1;
+      this.bossFever += 25;
+      if (this.bossFever >= MAX_FEVER) {
+        this.bossFeverActive = true;
+        this.bossFeverTimeLeft = 5;
+        this.showFeedback("BOSS FEVER!", COLORS.cyan);
+      }
+    }
+    this.spawnBossScrap();
+    this.showFeedback(fromTimeout ? "WAIT" : "HIT", COLORS.white);
+    this.bossAction = null;
+    this.bossNextDelay = this.bossHp > 0 ? 0.75 : 0;
+    if (this.bossHp <= 0) this.finishResult(true);
+  }
+
+  private failBossPattern(text: string) {
+    if (!this.bossAction) return;
+    this.bossAction = null;
+    if (this.bossFeverActive) { this.bossNextDelay = 0.2; this.showFeedback("FEVER", COLORS.cyan); return; }
+    this.health -= 1;
+    this.bossCombo = 0;
+    this.playerHurtTimer = 0.4;
+    this.player.setTexture("playerDamage").setTint(0xff6b6b);
+    this.showFeedback(text, COLORS.red);
+    this.time.delayedCall(400, () => { if (this.mode === "boss") this.player.setTexture("playerRun" + (this.playerFrame + 1)).clearTint(); });
+    if (this.health <= 0) this.finishResult(false);
+    else this.bossNextDelay = 0.65;
+  }
+
+  private spawnBossScrap() {
+    const key = "scrap" + Phaser.Math.Between(1, 7);
+    const scrap = this.track(this.add.image(840 + Phaser.Math.Between(-80, 80), 360 + Phaser.Math.Between(-60, 80), key).setDisplaySize(70, 70).setDepth(8));
+    this.tweens.add({ targets: scrap, x: scrap.x - 130, y: scrap.y - 150, angle: Phaser.Math.Between(-120, 120), alpha: 0, duration: 850, onComplete: () => scrap.destroy() });
+    this.bossScraps.push(scrap);
   }
 
   private togglePause() {
-    if (this.mode !== "playing") return;
+    if (this.mode !== "runner" && this.mode !== "boss") return;
     this.paused = !this.paused;
-    this.pauseButton.setText(this.paused ? "▶" : "Ⅱ");
+    this.pauseButton?.setText(this.paused ? "▶" : "Ⅱ");
     if (this.paused) {
-      this.stateLayer = this.add.container(0, 0).setDepth(30);
-      this.stateLayer.add(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.ink, 0.7));
-      this.stateLayer.add(this.addText(this.stateLayer, GAME_WIDTH / 2, 320, "PAUSED", 48, COLORS.white, "800").setOrigin(0.5));
-      this.stateLayer.add(this.addText(this.stateLayer, GAME_WIDTH / 2, 380, "상단 오른쪽 버튼으로 계속하기", 14, COLORS.muted, "600").setOrigin(0.5));
+      const veil = this.track(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.ink, 0.72).setDepth(40));
+      const title = this.track(this.add.text(GAME_WIDTH / 2, 290, "PAUSED", { fontFamily: "Arial", fontSize: "58px", color: "#f7f4ed" }).setOrigin(0.5).setDepth(41));
+      const resume = this.track(this.add.rectangle(535, 390, 180, 58, COLORS.gold, 1).setDepth(41).setInteractive({ useHandCursor: true }));
+      const resumeText = this.addText(535, 390, "RESUME", 18, COLORS.ink, 0.5, 0.5, 42);
+      const quit = this.track(this.add.rectangle(745, 390, 180, 58, 0x29303f, 1).setDepth(41).setInteractive({ useHandCursor: true }));
+      const quitText = this.addText(745, 390, "QUIT", 18, COLORS.white, 0.5, 0.5, 42);
+      this.stateObjects.push(veil, title, resume, resumeText, quit, quitText);
+      resume.on("pointerdown", () => this.togglePause());
+      quit.on("pointerdown", () => this.showMenu());
     } else {
-      this.stateLayer?.destroy();
+      for (const object of this.stateObjects) object.destroy();
+      this.stateObjects = [];
     }
   }
 
-  private endRun() {
-    if (this.mode !== "playing") return;
-    this.mode = "gameover";
-    this.touchLabels.setVisible(false);
-    this.player.setVelocity(0, 0);
-    const previous = Number(localStorage.getItem(this.highScoreKey) ?? 0);
-    const highScore = Math.max(previous, this.score);
-    localStorage.setItem(this.highScoreKey, String(highScore));
-    this.stateLayer = this.add.container(0, 0).setDepth(30);
-    this.stateLayer.add(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.ink, 0.8));
-    const panel = this.add.rectangle(GAME_WIDTH / 2, 365, 520, 300, COLORS.surface, 0.98).setStrokeStyle(2, COLORS.pink, 0.9);
-    this.stateLayer.add(panel);
-    this.stateLayer.add(this.addText(this.stateLayer, GAME_WIDTH / 2, 278, "RUN OVER", 42, COLORS.white, "800").setOrigin(0.5));
-    this.stateLayer.add(this.addText(this.stateLayer, GAME_WIDTH / 2, 338, `SCORE  ${String(this.score).padStart(6, "0")}`, 22, COLORS.orange, "800").setOrigin(0.5));
-    this.stateLayer.add(this.addText(this.stateLayer, GAME_WIDTH / 2, 376, `BEST  ${String(highScore).padStart(6, "0")}`, 14, COLORS.cyan, "700").setOrigin(0.5));
-    const button = this.add.rectangle(GAME_WIDTH / 2, 446, 220, 54, COLORS.orange, 1).setInteractive({ useHandCursor: true });
-    button.on("pointerdown", () => this.startRun());
-    this.stateLayer.add(button);
-    this.stateLayer.add(this.addText(this.stateLayer, GAME_WIDTH / 2, 446, "RETRY", 17, COLORS.ink, "800").setOrigin(0.5));
-    this.stateLayer.add(this.addText(this.stateLayer, GAME_WIDTH / 2, 503, "SPACE / TAP TO RETRY", 12, COLORS.muted, "700").setOrigin(0.5));
+  private finishResult(won: boolean) {
+    if (this.mode === "result") return;
+    this.mode = "result";
+    this.paused = false;
+    this.bestScore = Math.max(this.bestScore, this.score);
+    localStorage.setItem("slashrush-best-score", String(this.bestScore));
+    localStorage.setItem("slashrush-coins", String(this.coins));
+    this.clearScene();
+    this.mode = "result";
+    this.addBackdrop(won ? "bossBackground" : "introBg", won ? 0.35 : 0.45);
+    if (!won) this.track(this.add.image(255, 500, "playerDead").setDisplaySize(300, 160).setDepth(4));
+    this.track(this.add.rectangle(GAME_WIDTH / 2, 375, 560, 320, COLORS.panel, 0.96).setStrokeStyle(2, won ? COLORS.gold : COLORS.red, 1).setDepth(5));
+    this.addText(GAME_WIDTH / 2, 284, won ? "FINISH" : "GAME OVER", 46, won ? COLORS.cream : COLORS.white, 0.5, 0.5, 10);
+    this.addText(GAME_WIDTH / 2, 350, "SCORE " + String(this.score).padStart(6, "0"), 24, COLORS.white, 0.5, 0.5, 10);
+    this.addText(GAME_WIDTH / 2, 390, "COINS " + this.coins + "    BEST " + this.bestScore, 18, COLORS.gold, 0.5, 0.5, 10);
+    this.makeButton("RETRY", 540, 465, 170, 56, () => this.startRunner());
+    this.makeButton("MENU", 740, 465, 170, 56, () => this.showMenu());
+    this.addText(GAME_WIDTH / 2, 555, "SPACE / TAP TO RETRY", 14, COLORS.muted, 0.5, 0.5, 10);
   }
 
-  private addText(container: Phaser.GameObjects.Container, x: number, y: number, text: string, size: number, color: number, weight: string) {
-    const gameText = this.add.text(x, y, text, {
-      fontFamily: "Arial, Helvetica, sans-serif",
-      fontSize: `${size}px`,
-      fontStyle: weight === "800" || weight === "700" ? "bold" : "normal",
-      color: `#${color.toString(16).padStart(6, "0")}`,
-      letterSpacing: size >= 18 ? 1 : 0.4,
+  private createInput() {
+    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      if ((this.mode === "runner" || this.mode === "boss") && pointer.x > 1140 && pointer.y < 100) return;
+      if (this.mode === "intro") { this.showMenu(); return; }
+      if (this.mode !== "runner" && this.mode !== "boss") return;
+      this.pressStartedAt = performance.now();
     });
-    container.add(gameText);
-    return gameText;
+    this.input.on("pointerup", () => {
+      if (this.pressStartedAt < 0) return;
+      this.dispatchPress(performance.now() - this.pressStartedAt);
+      this.pressStartedAt = -1;
+    });
+    this.input.keyboard?.on("keydown-SPACE", () => {
+      if (this.mode === "intro") this.showMenu();
+      else if (this.mode === "menu" || this.mode === "result") this.startRunner();
+      else if (this.mode === "runner" || this.mode === "boss") if (!this.keyboardPressed) {
+        this.keyboardPressed = true;
+        this.pressStartedAt = performance.now();
+      }
+    });
+    this.input.keyboard?.on("keyup-SPACE", () => {
+      if (!this.keyboardPressed) return;
+      this.keyboardPressed = false;
+      this.dispatchPress(performance.now() - this.pressStartedAt);
+      this.pressStartedAt = -1;
+    });
+    this.input.keyboard?.on("keydown-ENTER", () => {
+      if (this.mode === "intro") this.showMenu();
+      else if (this.mode === "menu" || this.mode === "result") this.startRunner();
+    });
+    this.input.keyboard?.on("keydown-ESC", () => {
+      if (this.mode === "runner" || this.mode === "boss") this.togglePause();
+      else if (this.mode !== "intro" && this.mode !== "menu") this.showMenu();
+    });
+    this.input.keyboard?.on("keydown-B", () => { if (this.mode === "runner") this.startBoss(); });
+    this.input.keyboard?.on("keydown-R", () => { if (this.mode === "runner" || this.mode === "boss" || this.mode === "result") this.startRunner(); });
+  }
+
+  private dispatchPress(durationMs: number) {
+    const duration = durationMs / 1000;
+    if (duration >= 0.45) {
+      if (this.mode === "runner") this.handleRunnerAction("long_tap");
+      if (this.mode === "boss") this.handleBossAction("long_tap");
+      this.lastTapAt = -10;
+      return;
+    }
+    const now = performance.now() / 1000;
+    const doubleTap = now - this.lastTapAt <= 0.25;
+    this.lastTapAt = doubleTap ? -10 : now;
+    if (doubleTap) {
+      if (this.mode === "runner") this.handleRunnerAction("double_tap");
+      if (this.mode === "boss") this.handleBossAction("double_tap");
+    } else {
+      if (this.mode === "runner") this.handleRunnerAction("tap");
+      if (this.mode === "boss") this.handleBossAction("tap");
+    }
   }
 }
