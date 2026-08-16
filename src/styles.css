@@ -1,0 +1,73 @@
+:root {
+  color-scheme: dark;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #060914;
+  color: #f4f7ff;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #060914;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+#app {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+#app canvas {
+  display: block;
+  max-width: 100vw;
+  max-height: 100vh;
+  outline: none;
+}
+
+#orientation-lock {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 35%, rgba(41, 60, 112, 0.94), rgba(6, 9, 20, 0.99) 72%);
+  text-align: center;
+}
+
+.orientation-card {
+  display: grid;
+  gap: 12px;
+  max-width: 360px;
+  padding: 28px 24px;
+  border: 1px solid rgba(106, 232, 255, 0.38);
+  background: rgba(17, 23, 42, 0.9);
+  box-shadow: 0 18px 80px rgba(0, 0, 0, 0.45);
+}
+
+.orientation-card span:last-child {
+  color: #9ca9c9;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.orientation-icon {
+  color: #6ae8ff;
+  font-size: 46px;
+  line-height: 1;
+}
+
+@media (orientation: portrait) and (max-width: 900px) {
+  #orientation-lock { display: grid; }
+}
