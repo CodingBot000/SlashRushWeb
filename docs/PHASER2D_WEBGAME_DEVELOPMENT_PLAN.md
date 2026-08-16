@@ -67,6 +67,20 @@ public/assets/          : 원본 Godot 에셋 수령 후 이식 위치
 - [ ] GitHub `SlashRushWeb` 원격 생성/푸시
 - [ ] Vercel 계정 연결 후 production 배포
 
+## 7. 1차 QA 결과
+
+2026-08-17 기준 다음 검증을 완료했습니다.
+
+```text
+npm test       : 4 tests passed
+npm run build  : Vite production build passed
+npm run test:e2e: 4 tests passed
+```
+
+브라우저에서 메뉴의 `START RUN`, 플레이 진입, 점프/베기 키 입력, 모바일 가로 844×390 화면, 세로 390×844 화면의 가로모드 안내를 확인했습니다. 확인 중 발견한 메뉴 버튼 라벨 가림 문제도 수정했으며, 확인한 브라우저 콘솔 오류는 없습니다.
+
+남은 QA 리스크는 원본 Godot와 비교할 실제 기준 플레이 영상·씬·에셋이 없다는 점입니다. 원본이 복구되면 동일 시나리오를 녹화하여 충돌, 프레임, 점수, 사운드, 에셋 라이선스를 다시 대조합니다.
+
 ## 6. 배포 계획
 
 정적 Vite 산출물이므로 Vercel 프로젝트의 root를 `SLASHRUSH`로 설정하고 `npm run build` 결과인 `dist`를 배포합니다. 환경 변수는 필요하지 않습니다. GitHub와 Vercel CLI 인증이 연결되면 다음을 수행합니다.
