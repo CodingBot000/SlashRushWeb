@@ -59,10 +59,10 @@ export class GameScene extends Phaser.Scene {
   private playerFrameTimer = 0;
   private playerHurtTimer = 0;
   private slashTimer = 0;
-  private swordX = 342;
-  private swordY = 480;
-  private swordWidth = 195;
-  private swordHeight = 111;
+  private swordX = 366;
+  private swordY = 475;
+  private swordWidth = 205;
+  private swordHeight = 117;
   private swordDebugAlwaysVisible = true;
   private invincibleMode = false;
   private feedbackTimer = 0;
@@ -421,7 +421,7 @@ export class GameScene extends Phaser.Scene {
     this.swordY += deltaY;
     if (deltaSize !== 0) {
       this.swordWidth = Math.max(55, this.swordWidth + deltaSize);
-      this.swordHeight = Math.max(32, Math.round(this.swordWidth * (111 / 195)));
+      this.swordHeight = Math.max(32, Math.round(this.swordWidth * (117 / 205)));
     }
     this.applySwordDebugTransform();
     this.updateSettingsLabels();
