@@ -2,9 +2,11 @@ import Phaser from "phaser";
 
 const ASSET = "/assets/godot-source/assets";
 const GENERATED_ASSET = "/assets/generated";
+const GENERATED_PLAYER_ASSET = "/assets/generated/player-pixel-preview";
 
 export const assetPath = (relativePath: string) => `${ASSET}/${relativePath}`;
 const generatedAssetPath = (relativePath: string) => `${GENERATED_ASSET}/${relativePath}`;
+const generatedPlayerAssetPath = (relativePath: string) => `${GENERATED_PLAYER_ASSET}/${relativePath}`;
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -30,17 +32,18 @@ export class BootScene extends Phaser.Scene {
     this.load.image("ground", assetPath("background/stage1/ground_tile_01.png"));
     this.load.image("bossBackground", assetPath("background/stage1/boss_background.png"));
 
-    this.load.image("playerPreview", assetPath("characters/player1.png"));
-    for (let index = 1; index <= 5; index += 1) {
+    this.load.image("playerPreview", generatedPlayerAssetPath("player_idle.png"));
+    this.load.image("character1", generatedPlayerAssetPath("player_idle.png"));
+    for (let index = 2; index <= 5; index += 1) {
       this.load.image(`character${index}`, assetPath(`characters/player${index}.png`));
     }
-    this.load.image("playerRun1", assetPath("sprites/samurai/run/frame_01.png"));
-    this.load.image("playerRun2", assetPath("sprites/samurai/run/frame_02.png"));
-    this.load.image("playerRun3", assetPath("sprites/samurai/run/frame_03.png"));
-    this.load.image("playerRun4", assetPath("sprites/samurai/run/frame_04.png"));
-    this.load.image("playerIdle", assetPath("sprites/samurai/idle/player_stand.png"));
-    this.load.image("playerDamage", assetPath("sprites/samurai/damage/player_damage.png"));
-    this.load.image("playerDead", assetPath("sprites/samurai/dead/dead.png"));
+    this.load.image("playerRun1", generatedPlayerAssetPath("player_run_01.png"));
+    this.load.image("playerRun2", generatedPlayerAssetPath("player_run_02.png"));
+    this.load.image("playerRun3", generatedPlayerAssetPath("player_run_03.png"));
+    this.load.image("playerRun4", generatedPlayerAssetPath("player_run_04.png"));
+    this.load.image("playerIdle", generatedPlayerAssetPath("player_idle.png"));
+    this.load.image("playerDamage", generatedPlayerAssetPath("player_damage.png"));
+    this.load.image("playerDead", generatedPlayerAssetPath("player_dead.png"));
     this.load.image("swordSlash", assetPath("sprites/samurai/run/sword_slash.png"));
     this.load.image("slashEffect", assetPath("sprites/effect/slash_sword/slash_effect.png"));
 
