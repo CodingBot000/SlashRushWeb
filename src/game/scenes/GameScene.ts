@@ -59,6 +59,12 @@ export class GameScene extends Phaser.Scene {
   private playerFrameTimer = 0;
   private playerHurtTimer = 0;
   private slashTimer = 0;
+  private swordX = 292;
+  private swordY = 520;
+  private swordWidth = 185;
+  private swordHeight = 105;
+  private swordDebugAlwaysVisible = true;
+  private invincibleMode = false;
   private feedbackTimer = 0;
   private feverOverlay?: Phaser.GameObjects.Rectangle;
   private feverText?: Phaser.GameObjects.Text;
@@ -83,6 +89,11 @@ export class GameScene extends Phaser.Scene {
   private hintText?: Phaser.GameObjects.Text;
   private feedbackText?: Phaser.GameObjects.Text;
   private pauseButton?: Phaser.GameObjects.Text;
+  private settingsButton?: Phaser.GameObjects.Image;
+  private swordDebugValueText?: Phaser.GameObjects.Text;
+  private swordAlwaysLabel?: Phaser.GameObjects.Text;
+  private invincibleLabel?: Phaser.GameObjects.Text;
+  private settingsOverlayOpen = false;
   private stateObjects: Phaser.GameObjects.GameObject[] = [];
 
   private pressStartedAt = -1;
@@ -184,6 +195,11 @@ export class GameScene extends Phaser.Scene {
     this.bossLabel = undefined;
     this.hintText = undefined;
     this.feedbackText = undefined;
+    this.settingsButton = undefined;
+    this.swordDebugValueText = undefined;
+    this.swordAlwaysLabel = undefined;
+    this.invincibleLabel = undefined;
+    this.settingsOverlayOpen = false;
     this.paused = false;
     this.pressStartedAt = -1;
     this.keyboardPressed = false;
@@ -246,19 +262,56 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showSettingsCard() {
+    if (this.settingsOverlayOpen) return;
+    this.settingsOverlayOpen = true;
+    if (this.mode === "runner" || this.mode === "boss") {
+      this.paused = true;
+      this.pauseButton?.setText("▶");
+    }
     const shade = this.track(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.ink, 0.72).setDepth(40));
-    const panel = this.track(this.add.rectangle(GAME_WIDTH / 2, 360, 500, 310, COLORS.panel, 0.98).setStrokeStyle(2, COLORS.gold, 1).setDepth(41));
+    const panel = this.track(this.add.rectangle(GAME_WIDTH / 2, 360, 760, 600, COLORS.panel, 0.98).setStrokeStyle(2, COLORS.gold, 1).setDepth(41));
     this.stateObjects.push(shade, panel);
-    this.addText(GAME_WIDTH / 2, 270, "SETTING", 36, COLORS.cream, 0.5, 0.5, 42);
-    this.addText(GAME_WIDTH / 2, 330, "AUDIO  100%", 22, COLORS.white, 0.5, 0.5, 42);
-    this.addText(GAME_WIDTH / 2, 375, "ATTACK VIBRATION  ON", 18, COLORS.muted, 0.5, 0.5, 42);
-    this.addText(GAME_WIDTH / 2, 415, "HURT VIBRATION  ON", 18, COLORS.muted, 0.5, 0.5, 42);
-    this.makeOverlayButton("CLOSE", GAME_WIDTH / 2, 475, 170, 54, () => this.closeOverlayCard());
+    const title = this.addText(GAME_WIDTH / 2, 94, "SETTING", 36, COLORS.cream, 0.5, 0.5, 42);
+    const note = this.addText(GAME_WIDTH / 2, 132, "Temporary tuning tools for the player sword", 16, COLORS.muted, 0.5, 0.5, 42);
+    const audio = this.addText(390, 175, "AUDIO  100%", 14, COLORS.white, 0, 0.5, 42);
+    const attackVibration = this.addText(640, 175, "ATTACK VIBRATION  ON", 14, COLORS.muted, 0.5, 0.5, 42);
+    const hurtVibration = this.addText(890, 175, "HURT VIBRATION  ON", 14, COLORS.muted, 1, 0.5, 42);
+    this.stateObjects.push(title, note, audio, attackVibration, hurtVibration);
+    this.swordAlwaysLabel = this.makeOverlayButton("SWORD ALWAYS: ON", 450, 225, 250, 48, () => {
+      this.swordDebugAlwaysVisible = !this.swordDebugAlwaysVisible;
+      this.applySwordDebugTransform();
+      this.updateSettingsLabels();
+    });
+    this.invincibleLabel = this.makeOverlayButton("INVINCIBLE: OFF", 830, 225, 250, 48, () => {
+      this.invincibleMode = !this.invincibleMode;
+      this.updateSettingsLabels();
+      this.updateHud();
+    });
+    const debugTitle = this.addText(GAME_WIDTH / 2, 282, "SWORD DEBUG", 24, COLORS.cyan, 0.5, 0.5, 42);
+    this.swordDebugValueText = this.addText(GAME_WIDTH / 2, 316, "", 18, COLORS.white, 0.5, 0.5, 42);
+    const debugTip = this.addText(GAME_WIDTH / 2, 484, "Move the sword until its hand sits in front of the runner.", 15, COLORS.muted, 0.5, 0.5, 42);
+    this.stateObjects.push(debugTitle, this.swordDebugValueText, debugTip);
+    this.makeOverlayButton("X -10", 380, 370, 120, 48, () => this.adjustSword(-10, 0, 0));
+    this.makeOverlayButton("X +10", 520, 370, 120, 48, () => this.adjustSword(10, 0, 0));
+    this.makeOverlayButton("Y -10", 680, 370, 120, 48, () => this.adjustSword(0, -10, 0));
+    this.makeOverlayButton("Y +10", 820, 370, 120, 48, () => this.adjustSword(0, 10, 0));
+    this.makeOverlayButton("SIZE -10", 515, 430, 140, 48, () => this.adjustSword(0, 0, -10));
+    this.makeOverlayButton("SIZE +10", 765, 430, 140, 48, () => this.adjustSword(0, 0, 10));
+    this.makeOverlayButton("CLOSE", GAME_WIDTH / 2, 565, 170, 54, () => this.closeOverlayCard());
+    this.updateSettingsLabels();
   }
 
   private closeOverlayCard() {
     for (const object of this.stateObjects) object.destroy();
     this.stateObjects = [];
+    this.swordDebugValueText = undefined;
+    this.swordAlwaysLabel = undefined;
+    this.invincibleLabel = undefined;
+    this.settingsOverlayOpen = false;
+    if (this.mode === "runner" || this.mode === "boss") {
+      this.paused = false;
+      this.pauseButton?.setText("Ⅱ");
+    }
   }
 
   private makeOverlayButton(text: string, x: number, y: number, width: number, height: number, callback: () => void) {
@@ -266,6 +319,26 @@ export class GameScene extends Phaser.Scene {
     const label = this.addText(x, y, text, 18, COLORS.ink, 0.5, 0.5, 46);
     this.stateObjects.push(button, label);
     button.on("pointerdown", callback);
+    return label;
+  }
+
+  private updateSettingsLabels() {
+    this.swordAlwaysLabel?.setText("SWORD ALWAYS: " + (this.swordDebugAlwaysVisible ? "ON" : "OFF"));
+    this.invincibleLabel?.setText("INVINCIBLE: " + (this.invincibleMode ? "ON" : "OFF"));
+    this.swordDebugValueText?.setText(
+      "X " + Math.round(this.swordX) + "   Y " + Math.round(this.swordY) + "   SIZE " + Math.round(this.swordWidth) + " x " + Math.round(this.swordHeight),
+    );
+  }
+
+  private adjustSword(deltaX: number, deltaY: number, deltaSize: number) {
+    this.swordX += deltaX;
+    this.swordY += deltaY;
+    if (deltaSize !== 0) {
+      this.swordWidth = Math.max(55, this.swordWidth + deltaSize);
+      this.swordHeight = Math.max(32, Math.round(this.swordWidth * (105 / 185)));
+    }
+    this.applySwordDebugTransform();
+    this.updateSettingsLabels();
   }
 
   private showCharacterSelect() {
@@ -440,6 +513,8 @@ export class GameScene extends Phaser.Scene {
     this.feedbackText = this.addText(GAME_WIDTH / 2, 144, "", 42, COLORS.white, 0.5, 0.5, 25);
     this.feedbackText.setAlpha(0);
     this.hintText = this.addText(GAME_WIDTH / 2, 672, boss ? "" : "TAP / TAP TAP / HOLD  //  DON'T CUT ITEMS", 20, COLORS.white, 0.5, 0.5, 20);
+    this.settingsButton = this.track(this.add.image(1168, 30, "settingsIcon").setDisplaySize(34, 34).setDepth(25).setInteractive({ useHandCursor: true }));
+    this.settingsButton.on("pointerdown", () => { this.playSfx("uiClick", 0.4); this.showSettingsCard(); });
     this.pauseButton = this.addText(1218, 30, "Ⅱ", 28, COLORS.white, 0.5, 0.5, 25).setInteractive({ useHandCursor: true });
     this.pauseButton.on("pointerdown", () => this.togglePause());
     if (boss) {
@@ -471,8 +546,16 @@ export class GameScene extends Phaser.Scene {
     // Keep the full arm-and-sword source art subordinate to the runner.
     // The original Godot scene scales this layer from the player sprite, but
     // the browser's fixed display box made the blade read much too large.
-    this.playerSlash = this.track(this.add.image(292, 520, "swordSlash").setDisplaySize(185, 105).setDepth(6).setAlpha(0));
+    this.playerSlash = this.track(this.add.image(this.swordX, this.swordY, "swordSlash").setDisplaySize(this.swordWidth, this.swordHeight).setDepth(6).setAlpha(this.swordDebugAlwaysVisible ? 1 : 0));
     this.playerSlash.setRotation(Phaser.Math.DegToRad(20));
+  }
+
+  private applySwordDebugTransform() {
+    if (!this.playerSlash || !this.playerSlash.active) return;
+    // setScale(1) would reset the display-size fit to the source PNG's
+    // native 1211px width, which is the cause of the oversized blade.
+    this.playerSlash.setPosition(this.swordX, this.swordY).setDisplaySize(this.swordWidth, this.swordHeight);
+    this.playerSlash.setAlpha(this.swordDebugAlwaysVisible || this.slashTimer > 0 ? 1 : 0);
   }
 
   private startRunner() {
@@ -510,7 +593,8 @@ export class GameScene extends Phaser.Scene {
       this.playerFrame = (this.playerFrame + 1) % 4;
       this.player.setTexture("playerRun" + (this.playerFrame + 1));
     }
-    if (this.slashTimer <= 0) this.playerSlash.setAlpha(0);
+    if (this.swordDebugAlwaysVisible) this.playerSlash.setAlpha(1);
+    else if (this.slashTimer <= 0) this.playerSlash.setAlpha(0);
     if (this.feedbackTimer <= 0) this.feedbackText?.setAlpha(0);
     this.runnerTiles.forEach((tile, index) => {
       const speed = [0.02, 0.24, 0.58, 1.12, 2.05][index] || 1;
@@ -596,8 +680,13 @@ export class GameScene extends Phaser.Scene {
 
   private playPlayerSlash(strong = false) {
     this.slashTimer = strong ? 0.34 : 0.2;
-    this.playerSlash.setPosition(318, strong ? 505 : 520).setAlpha(1).setScale(strong ? 1.12 : 1);
-    this.tweens.add({ targets: this.playerSlash, alpha: 0, duration: this.slashTimer * 1000, ease: "Cubic.Out" });
+    this.applySwordDebugTransform();
+    const attackScale = strong && !this.swordDebugAlwaysVisible ? 1.12 : 1;
+    this.playerSlash.setDisplaySize(this.swordWidth * attackScale, this.swordHeight * attackScale).setAlpha(1);
+    this.tweens.killTweensOf(this.playerSlash);
+    if (!this.swordDebugAlwaysVisible) {
+      this.tweens.add({ targets: this.playerSlash, alpha: 0, duration: this.slashTimer * 1000, ease: "Cubic.Out" });
+    }
     this.playSfx("slashSfx", 0.35);
   }
 
@@ -621,6 +710,12 @@ export class GameScene extends Phaser.Scene {
   private failObject(object: RunnerObject, sliced: boolean) {
     if (object.handled) return;
     object.handled = true;
+    if (this.invincibleMode) {
+      if (sliced) this.spawnSlicePieces(object, 0xc83f3f);
+      this.showFeedback("INVINCIBLE", COLORS.cyan);
+      this.removeRunnerObject(object);
+      return;
+    }
     if (this.feverActive) { this.removeRunnerObject(object); return; }
     this.combo = 0;
     this.health -= 1;
@@ -868,6 +963,11 @@ export class GameScene extends Phaser.Scene {
     if (!this.bossAction) return;
     this.bossAction = null;
     if (this.bossFeverActive) { this.bossNextDelay = 0.2; this.showFeedback("FEVER", COLORS.cyan); return; }
+    if (this.invincibleMode) {
+      this.bossNextDelay = 0.2;
+      this.showFeedback("INVINCIBLE", COLORS.cyan);
+      return;
+    }
     this.health -= 1;
     this.bossCombo = 0;
     this.playerHurtTimer = 0.4;
