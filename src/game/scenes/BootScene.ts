@@ -17,6 +17,9 @@ export class BootScene extends Phaser.Scene {
     this.load.image("menuButton", assetPath("ui/button_rectangle_depth_flat.png"));
     this.load.image("settingsIcon", assetPath("ui/icon_setting.png"));
     this.load.image("combo", assetPath("ui/combo.png"));
+    for (let digit = 0; digit <= 9; digit += 1) {
+      this.load.image(`num${digit}`, assetPath(`ui/num${digit}.png`));
+    }
     this.load.image("waitCue", assetPath("ui/window_01.png"));
     for (let index = 1; index <= 5; index += 1) {
       this.load.image(`circle${index}`, assetPath(`ui/circle_0${index}.png`));
@@ -41,6 +44,7 @@ export class BootScene extends Phaser.Scene {
     this.load.image("playerIdle", assetPath("sprites/samurai/idle/player_stand.png"));
     this.load.image("playerDamage", assetPath("sprites/samurai/damage/player_damage.png"));
     this.load.image("playerDead", assetPath("sprites/samurai/dead/dead.png"));
+    this.load.image("swordSheath", assetPath("sprites/samurai/run/sword_sheath.png"));
     this.load.image("swordSlash", assetPath("sprites/samurai/run/sword_slash.png"));
     this.load.image("slashEffect", assetPath("sprites/effect/slash_sword/slash_effect.png"));
 

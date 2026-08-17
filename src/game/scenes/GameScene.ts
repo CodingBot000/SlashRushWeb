@@ -1,5 +1,19 @@
 import Phaser from "phaser";
 import { GAME_HEIGHT, GAME_WIDTH } from "../config";
+import { ComboImpactPopup } from "../effects/ComboImpactPopup";
+import { FeverImpactOverlay } from "../effects/FeverImpactOverlay";
+import { HitFeedbackController } from "../effects/HitFeedbackController";
+import { feverTapPulse } from "../effects/effectRules";
+import { BossVisualController } from "../entities/BossVisualController";
+import { PlayerVisualController } from "../entities/PlayerVisualController";
+import {
+  changeMasterVolume,
+  DEFAULT_GAME_SETTINGS,
+  GameSettingsState,
+  loadGameSettings,
+  saveGameSettings,
+  triggerHaptic,
+} from "../services/GameSettings";
 import {
   actionHint,
   actionMatches,
@@ -29,6 +43,23 @@ interface RunnerObject {
   baseY: number;
   phase: number;
   handled: boolean;
+  feverSpawn: boolean;
+}
+
+interface SlashRushDebugApi {
+  getState: () => {
+    mode: GameMode;
+    combo: number;
+    bossCombo: number;
+    feverActive: boolean;
+    bossFeverActive: boolean;
+    hurt: boolean;
+  };
+  startRunner: () => void;
+  startBoss: () => void;
+  triggerCombo: () => void;
+  triggerFever: () => void;
+  triggerHurt: () => void;
 }
 
 const COLORS = {
@@ -55,10 +86,7 @@ export class GameScene extends Phaser.Scene {
   private runnerElapsed = 0;
   private player!: Phaser.GameObjects.Sprite;
   private playerSlash!: Phaser.GameObjects.Image;
-  private playerFrame = 0;
-  private playerFrameTimer = 0;
-  private playerHurtTimer = 0;
-  private slashTimer = 0;
+  private playerVisual?: PlayerVisualController;
   private swordX = 366;
   private swordY = 475;
   private swordWidth = 205;
@@ -66,7 +94,8 @@ export class GameScene extends Phaser.Scene {
   private swordDebugAlwaysVisible = true;
   private invincibleMode = false;
   private feedbackTimer = 0;
-  private feverOverlay?: Phaser.GameObjects.Rectangle;
+  private comboPopup?: ComboImpactPopup;
+  private feverImpact?: FeverImpactOverlay;
   private feverText?: Phaser.GameObjects.Text;
   private feverSpawnTimer = 0;
   private feverTimeLeft = 0;
@@ -83,6 +112,8 @@ export class GameScene extends Phaser.Scene {
   private comboText?: Phaser.GameObjects.Text;
   private coinsText?: Phaser.GameObjects.Text;
   private feverFill?: Phaser.GameObjects.Rectangle;
+  private feverTrack?: Phaser.GameObjects.Rectangle;
+  private feverLabel?: Phaser.GameObjects.Text;
   private bossFill?: Phaser.GameObjects.Rectangle;
   private bossTimerFill?: Phaser.GameObjects.Rectangle;
   private bossLabel?: Phaser.GameObjects.Text;
@@ -96,6 +127,9 @@ export class GameScene extends Phaser.Scene {
   private swordDebugValueText?: Phaser.GameObjects.Text;
   private swordAlwaysLabel?: Phaser.GameObjects.Text;
   private invincibleLabel?: Phaser.GameObjects.Text;
+  private audioSettingLabel?: Phaser.GameObjects.Text;
+  private attackVibrationLabel?: Phaser.GameObjects.Text;
+  private hurtVibrationLabel?: Phaser.GameObjects.Text;
   private settingsOverlayOpen = false;
   private stateObjects: Phaser.GameObjects.GameObject[] = [];
 
@@ -103,11 +137,7 @@ export class GameScene extends Phaser.Scene {
   private lastTapAt = -10;
   private keyboardPressed = false;
 
-  private bossContainer?: Phaser.GameObjects.Container;
-  private bossBody?: Phaser.GameObjects.Image;
-  private bossLeftArm?: Phaser.GameObjects.Image;
-  private bossRightArm?: Phaser.GameObjects.Image;
-  private bossCore?: Phaser.GameObjects.Image;
+  private bossVisual?: BossVisualController;
   private bossHp = BOSS_MAX_HP;
   private bossCombo = 0;
   private bossPatternIndex = 0;
@@ -123,15 +153,20 @@ export class GameScene extends Phaser.Scene {
   private bossWaitCue?: Phaser.GameObjects.Image;
   private bossScraps: Phaser.GameObjects.Image[] = [];
   private music?: Phaser.Sound.BaseSound;
+  private readonly hitFeedback = new HitFeedbackController();
+  private settings: GameSettingsState = { ...DEFAULT_GAME_SETTINGS };
 
   constructor() {
     super("GameScene");
   }
 
   create() {
+    this.settings = loadGameSettings(localStorage);
+    this.sound.volume = this.settings.masterVolume;
     this.bestScore = Number(localStorage.getItem("slashrush-best-score") || 0);
     this.coins = Number(localStorage.getItem("slashrush-coins") || 0);
     this.createInput();
+    this.installDevelopmentHooks();
     this.showIntro();
   }
 
@@ -164,6 +199,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private clearScene() {
+    this.comboPopup?.destroy();
+    this.comboPopup = undefined;
+    this.feverImpact?.destroy();
+    this.feverImpact = undefined;
+    this.playerVisual?.destroy();
+    this.playerVisual = undefined;
+    this.bossVisual?.destroy();
+    this.bossVisual = undefined;
+    this.hitFeedback.reset();
     this.tweens.killAll();
     this.time.removeAllEvents();
     if (this.music) {
@@ -179,12 +223,6 @@ export class GameScene extends Phaser.Scene {
     this.bossScraps = [];
     this.player = undefined as unknown as Phaser.GameObjects.Sprite;
     this.playerSlash = undefined as unknown as Phaser.GameObjects.Image;
-    this.bossContainer = undefined;
-    this.bossBody = undefined;
-    this.bossLeftArm = undefined;
-    this.bossRightArm = undefined;
-    this.bossCore = undefined;
-    this.feverOverlay = undefined;
     this.feverText = undefined;
     this.bossHint = undefined;
     this.pauseButton = undefined;
@@ -193,6 +231,8 @@ export class GameScene extends Phaser.Scene {
     this.comboText = undefined;
     this.coinsText = undefined;
     this.feverFill = undefined;
+    this.feverTrack = undefined;
+    this.feverLabel = undefined;
     this.bossFill = undefined;
     this.bossTimerFill = undefined;
     this.bossLabel = undefined;
@@ -205,6 +245,9 @@ export class GameScene extends Phaser.Scene {
     this.swordDebugValueText = undefined;
     this.swordAlwaysLabel = undefined;
     this.invincibleLabel = undefined;
+    this.audioSettingLabel = undefined;
+    this.attackVibrationLabel = undefined;
+    this.hurtVibrationLabel = undefined;
     this.settingsOverlayOpen = false;
     this.paused = false;
     this.pressStartedAt = -1;
@@ -275,20 +318,28 @@ export class GameScene extends Phaser.Scene {
       this.pauseButton?.setText("▶");
     }
     const shade = this.track(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.ink, 0.72).setDepth(40));
-    const panel = this.track(this.add.rectangle(GAME_WIDTH / 2, 360, 500, 330, COLORS.panel, 0.98).setStrokeStyle(2, COLORS.gold, 1).setDepth(41));
+    const panel = this.track(this.add.rectangle(GAME_WIDTH / 2, 360, 540, 440, COLORS.panel, 0.98).setStrokeStyle(2, COLORS.gold, 1).setDepth(41));
     this.stateObjects.push(shade, panel);
-    const title = this.addText(GAME_WIDTH / 2, 242, "SETTING", 36, COLORS.cream, 0.5, 0.5, 42);
-    const note = this.addText(GAME_WIDTH / 2, 278, "Game settings", 16, COLORS.muted, 0.5, 0.5, 42);
-    const audio = this.addText(420, 330, "AUDIO  100%", 14, COLORS.white, 0, 0.5, 42);
-    const attackVibration = this.addText(640, 330, "ATTACK VIBRATION  ON", 14, COLORS.muted, 0.5, 0.5, 42);
-    const hurtVibration = this.addText(640, 365, "HURT VIBRATION  ON", 14, COLORS.muted, 0.5, 0.5, 42);
-    this.stateObjects.push(title, note, audio, attackVibration, hurtVibration);
-    this.invincibleLabel = this.makeOverlayButton("INVINCIBLE: OFF", GAME_WIDTH / 2, 438, 250, 48, () => {
+    const title = this.addText(GAME_WIDTH / 2, 194, "SETTING", 36, COLORS.cream, 0.5, 0.5, 42);
+    const note = this.addText(GAME_WIDTH / 2, 232, "Audio and haptic feedback", 16, COLORS.muted, 0.5, 0.5, 42);
+    this.audioSettingLabel = this.addText(GAME_WIDTH / 2, 282, "AUDIO 100%", 18, COLORS.white, 0.5, 0.5, 42);
+    this.stateObjects.push(title, note, this.audioSettingLabel);
+    this.makeOverlayButton("−", 490, 282, 54, 42, () => this.changeAudioVolume(-0.1));
+    this.makeOverlayButton("+", 790, 282, 54, 42, () => this.changeAudioVolume(0.1));
+    this.attackVibrationLabel = this.makeOverlayButton("ATTACK VIBRATION: ON", GAME_WIDTH / 2, 340, 300, 44, () => {
+      this.settings = { ...this.settings, attackVibration: !this.settings.attackVibration };
+      this.persistSettings();
+    });
+    this.hurtVibrationLabel = this.makeOverlayButton("HURT VIBRATION: ON", GAME_WIDTH / 2, 394, 300, 44, () => {
+      this.settings = { ...this.settings, hurtVibration: !this.settings.hurtVibration };
+      this.persistSettings();
+    });
+    this.invincibleLabel = this.makeOverlayButton("INVINCIBLE: OFF", GAME_WIDTH / 2, 448, 300, 44, () => {
       this.invincibleMode = !this.invincibleMode;
       this.updateSettingsLabels();
       this.updateHud();
     });
-    this.makeOverlayButton("CLOSE", GAME_WIDTH / 2, 495, 170, 48, () => this.closeOverlayCard());
+    this.makeOverlayButton("CLOSE", GAME_WIDTH / 2, 512, 170, 46, () => this.closeOverlayCard());
     this.updateSettingsLabels();
   }
 
@@ -296,6 +347,9 @@ export class GameScene extends Phaser.Scene {
     for (const object of this.stateObjects) object.destroy();
     this.stateObjects = [];
     this.invincibleLabel = undefined;
+    this.audioSettingLabel = undefined;
+    this.attackVibrationLabel = undefined;
+    this.hurtVibrationLabel = undefined;
     this.settingsOverlayOpen = false;
     if (this.mode === "runner" || this.mode === "boss") {
       this.paused = false;
@@ -411,6 +465,9 @@ export class GameScene extends Phaser.Scene {
   private updateSettingsLabels() {
     this.swordAlwaysLabel?.setText("SWORD ALWAYS: " + (this.swordDebugAlwaysVisible ? "ON" : "OFF"));
     this.invincibleLabel?.setText("INVINCIBLE: " + (this.invincibleMode ? "ON" : "OFF"));
+    this.audioSettingLabel?.setText("AUDIO " + Math.round(this.settings.masterVolume * 100) + "%");
+    this.attackVibrationLabel?.setText("ATTACK VIBRATION: " + (this.settings.attackVibration ? "ON" : "OFF"));
+    this.hurtVibrationLabel?.setText("HURT VIBRATION: " + (this.settings.hurtVibration ? "ON" : "OFF"));
     this.swordDebugValueText?.setText(
       "X " + Math.round(this.swordX) + "   Y " + Math.round(this.swordY) + "   SIZE " + Math.round(this.swordWidth) + " x " + Math.round(this.swordHeight),
     );
@@ -424,6 +481,17 @@ export class GameScene extends Phaser.Scene {
       this.swordHeight = Math.max(32, Math.round(this.swordWidth * (117 / 205)));
     }
     this.applySwordDebugTransform();
+    this.updateSettingsLabels();
+  }
+
+  private changeAudioVolume(delta: number) {
+    this.settings = changeMasterVolume(this.settings, delta);
+    this.persistSettings();
+  }
+
+  private persistSettings() {
+    this.sound.volume = this.settings.masterVolume;
+    saveGameSettings(this.settings, localStorage);
     this.updateSettingsLabels();
   }
 
@@ -473,15 +541,18 @@ export class GameScene extends Phaser.Scene {
       ["TAP TAP", "enemyFast", "빠른 몬스터는\n두 번 연속 공격하세요.", 0xff7d6e],
       ["HOLD", "enemyArmor", "갑옷 몬스터는\n길게 눌러 처리하세요.", COLORS.blue],
       ["ITEMS", "feverOrb", "Coin / Fever Orb / Heal은\n베지 말고 통과 수집하세요.", COLORS.green],
+      ["COMBO & FEVER", "combo", "연속 성공으로 FEVER!\n속도와 공격 범위가 상승합니다.", COLORS.cyan],
     ] as const;
     cards.forEach(([title, key, description, color], index) => {
-      const x = 205 + index * 290;
-      this.track(this.add.rectangle(x, 365, 258, 390, COLORS.panel, 1).setStrokeStyle(2, color, 1).setDepth(2));
-      this.addText(x, 218, title, 28, color, 0.5, 0.5, 6);
-      this.track(this.add.image(x, 350, key).setDisplaySize(145, 145).setDepth(4));
-      this.addText(x, 500, description, 17, COLORS.white, 0.5, 0.5, 6).setLineSpacing(8);
+      const x = 150 + index * 245;
+      this.track(this.add.rectangle(x, 365, 222, 390, COLORS.panel, 1).setStrokeStyle(2, color, 1).setDepth(2));
+      this.addText(x, 218, title, title === "COMBO & FEVER" ? 20 : 25, color, 0.5, 0.5, 6);
+      const image = this.track(this.add.image(x, 350, key).setDepth(4));
+      if (key === "combo") image.setDisplaySize(180, 135);
+      else image.setDisplaySize(132, 132);
+      this.addText(x, 500, description, 15, COLORS.white, 0.5, 0.5, 6).setLineSpacing(8).setWordWrapWidth(194);
     });
-    this.addText(GAME_WIDTH / 2, 670, "Success builds COMBO and FEVER. A short robot samurai boss battle follows the 60 second runner.", 15, COLORS.muted, 0.5, 0.5, 10);
+    this.addText(GAME_WIDTH / 2, 670, "60초 러너 이후 로봇 사무라이 보스전이 이어집니다.", 15, COLORS.muted, 0.5, 0.5, 10);
   }
 
   private makeSimpleBackButton(callback: () => void) {
@@ -591,11 +662,12 @@ export class GameScene extends Phaser.Scene {
     this.track(this.add.rectangle(GAME_WIDTH / 2, 38, GAME_WIDTH - 36, 74, 0x090c16, 0.36).setDepth(15));
     this.scoreText = this.addText(28, 27, "SCORE 000000", 24, COLORS.white, 0, 0.5, 20);
     this.heartsText = this.addText(282, 27, "♥ ♥ ♥", 28, 0xff5b6d, 0, 0.5, 20);
-    this.comboText = this.addText(440, 27, "COMBO 0", 23, COLORS.cream, 0, 0.5, 20);
-    this.coinsText = this.addText(600, 27, "COIN 0", 23, COLORS.gold, 0, 0.5, 20);
-    this.track(this.add.rectangle(782, 28, 264, 22, COLORS.ink, 0.48).setOrigin(0, 0.5).setDepth(19));
+    this.comboText = this.addText(440, 27, "COMBO 0", 23, COLORS.cream, 0, 0.5, 20).setVisible(!boss);
+    this.coinsText = this.addText(600, 27, "COIN 0", 23, COLORS.gold, 0, 0.5, 20).setVisible(!boss);
+    this.feverTrack = this.track(this.add.rectangle(782, 28, 264, 22, COLORS.ink, 0.48).setOrigin(0, 0.5).setDepth(19).setVisible(!boss));
     this.feverFill = this.track(this.add.rectangle(784, 28, 0, 16, COLORS.cyan, 1).setOrigin(0, 0.5).setDepth(20));
-    this.addText(786, 54, "FEVER", 14, COLORS.white, 0, 0.5, 20);
+    this.feverFill.setVisible(!boss);
+    this.feverLabel = this.addText(786, 54, "FEVER", 14, COLORS.white, 0, 0.5, 20).setVisible(!boss);
     this.feedbackText = this.addText(GAME_WIDTH / 2, 144, "", 42, COLORS.white, 0.5, 0.5, 25);
     this.feedbackText.setAlpha(0);
     this.hintText = this.addText(GAME_WIDTH / 2, 672, boss ? "" : "TAP / TAP TAP / HOLD  //  DON'T CUT ITEMS", 20, COLORS.white, 0.5, 0.5, 20);
@@ -618,31 +690,35 @@ export class GameScene extends Phaser.Scene {
     this.scoreText?.setText("SCORE " + String(this.score).padStart(6, "0"));
     const hearts = [0, 1, 2].map((index) => index < this.health ? "♥" : "♡").join(" ");
     this.heartsText?.setText(hearts);
-    this.comboText?.setText(this.mode === "boss" ? "COMBO " + this.bossCombo : "COMBO " + this.combo);
-    this.coinsText?.setText(this.mode === "boss" ? "" : "COIN " + this.coins);
-    this.feverFill?.setSize(260 * clamp(this.fever / MAX_FEVER, 0, 1), 16);
+    this.comboText?.setText("COMBO " + this.combo).setVisible(this.mode !== "boss");
+    this.coinsText?.setText("COIN " + this.coins).setVisible(this.mode !== "boss");
+    this.feverTrack?.setVisible(this.mode !== "boss");
+    this.feverFill?.setVisible(this.mode !== "boss").setSize(260 * clamp(this.fever / MAX_FEVER, 0, 1), 16);
+    this.feverLabel?.setVisible(this.mode !== "boss");
     if (this.mode === "boss") {
       this.bossFill?.setSize(300 * clamp(this.bossHp / BOSS_MAX_HP, 0, 1), 16);
-      this.bossLabel?.setText("BOSS " + this.bossHp + "/" + BOSS_MAX_HP);
+      this.bossLabel?.setText(this.bossFeverActive
+        ? "BOSS FEVER " + this.bossFeverTimeLeft.toFixed(1) + "s"
+        : "BOSS " + this.bossHp + "/" + BOSS_MAX_HP);
       this.bossTimerFill?.setSize(300 * this.bossTimerRatio(), 10);
     }
   }
 
   private createRunnerPlayer() {
-    this.player = this.track(this.add.sprite(210, 610, "playerRun1").setOrigin(0.5, 1).setDisplaySize(231, 230).setDepth(5));
-    // Keep the full arm-and-sword source art subordinate to the runner.
-    // The original Godot scene scales this layer from the player sprite, but
-    // the browser's fixed display box made the blade read much too large.
-    this.playerSlash = this.track(this.add.image(this.swordX, this.swordY, "swordSlash").setDisplaySize(this.swordWidth, this.swordHeight).setDepth(4).setAlpha(this.swordDebugAlwaysVisible ? 1 : 0));
-    this.playerSlash.setRotation(Phaser.Math.DegToRad(20));
+    this.playerVisual = new PlayerVisualController(this, {
+      x: this.swordX,
+      y: this.swordY,
+      width: this.swordWidth,
+      height: this.swordHeight,
+      debugAlwaysVisible: this.swordDebugAlwaysVisible,
+    });
+    this.player = this.playerVisual.sprite;
+    this.playerSlash = this.playerVisual.slashSprite;
   }
 
   private applySwordDebugTransform() {
-    if (!this.playerSlash || !this.playerSlash.active) return;
-    // setScale(1) would reset the display-size fit to the source PNG's
-    // native 1211px width, which is the cause of the oversized blade.
-    this.playerSlash.setPosition(this.swordX, this.swordY).setDisplaySize(this.swordWidth, this.swordHeight);
-    this.playerSlash.setAlpha(this.swordDebugAlwaysVisible || this.slashTimer > 0 ? 1 : 0);
+    this.playerVisual?.setSwordTransform(this.swordX, this.swordY, this.swordWidth, this.swordHeight);
+    this.playerVisual?.setDebugAlwaysVisible(this.swordDebugAlwaysVisible);
   }
 
   private startRunner() {
@@ -661,7 +737,8 @@ export class GameScene extends Phaser.Scene {
     this.buildRunnerBackground();
     this.createRunnerPlayer();
     this.buildHud();
-    this.feverOverlay = this.track(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.cyan, 0.12).setDepth(12).setVisible(false));
+    this.feverImpact = new FeverImpactOverlay(this, 12);
+    this.comboPopup = new ComboImpactPopup(this);
     this.feverText = this.addText(GAME_WIDTH / 2, 220, "TAP!!", 74, COLORS.cream, 0.5, 0.5, 24);
     this.feverText.setVisible(false);
     this.playMusic("runningMusic");
@@ -670,25 +747,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateRunner(seconds: number) {
+    this.hitFeedback.update(seconds);
     this.runnerElapsed += seconds;
-    this.playerFrameTimer += seconds;
-    this.slashTimer = Math.max(0, this.slashTimer - seconds);
-    this.playerHurtTimer = Math.max(0, this.playerHurtTimer - seconds);
     this.feedbackTimer = Math.max(0, this.feedbackTimer - seconds);
-    if (this.playerFrameTimer >= 1 / 12) {
-      this.playerFrameTimer = 0;
-      this.playerFrame = (this.playerFrame + 1) % 4;
-      this.player.setTexture("playerRun" + (this.playerFrame + 1));
-    }
-    if (this.swordDebugAlwaysVisible) this.playerSlash.setAlpha(1);
-    else if (this.slashTimer <= 0) this.playerSlash.setAlpha(0);
+    this.playerVisual?.update(seconds, this.feverActive ? 3 : 1);
+    this.feverImpact?.update(seconds);
     if (this.feedbackTimer <= 0) this.feedbackText?.setAlpha(0);
+    const motion = this.hitFeedback.motionScale;
+    const feverScrollMultiplier = this.feverActive ? 2 : 1;
     this.runnerTiles.forEach((tile, index) => {
       const speed = [0.02, 0.24, 0.58, 1.12, 2.05][index] || 1;
-      tile.tilePositionX += 780 * speed * seconds;
+      tile.tilePositionX += 780 * speed * seconds * motion.background * feverScrollMultiplier;
     });
     while (this.scheduleIndex < this.schedule.length && this.schedule[this.scheduleIndex].time <= this.runnerElapsed) {
-      this.spawnRunnerObject(this.schedule[this.scheduleIndex].type);
+      if (!this.feverActive) this.spawnRunnerObject(this.schedule[this.scheduleIndex].type);
       this.scheduleIndex += 1;
     }
     if (this.feverActive) {
@@ -699,12 +771,12 @@ export class GameScene extends Phaser.Scene {
         this.spawnRunnerObject(["enemy_basic", "enemy_basic", "enemy_fast", "bomb"][Phaser.Math.Between(0, 3)] as RunnerObjectType, true);
       }
       if (this.feverTimeLeft <= 0) this.endFever();
-      this.feverText?.setScale(1 + Math.sin(this.time.now / 80) * 0.12);
+      this.feverText?.setScale(feverTapPulse(FEVER_DURATION - this.feverTimeLeft));
     }
     const speed = this.feverActive ? 840 : 420;
     for (const object of [...this.runnerObjects]) {
       if (object.handled) continue;
-      object.x -= speed * seconds;
+      object.x -= speed * seconds * motion.objects;
       object.sprite.x = object.x;
       if (object.rule.good) object.sprite.y = object.baseY + Math.sin(this.time.now / 160 + object.phase) * 5;
       else {
@@ -727,7 +799,7 @@ export class GameScene extends Phaser.Scene {
     sprite.setDisplaySize(rule.height * (texture.width / texture.height), rule.height);
     if (rule.good) sprite.setDepth(3);
     if (feverSpawn) sprite.setTint(0xc7faff);
-    this.runnerObjects.push({ type, rule, sprite, x: 1400, baseY: 610 + rule.yOffset, phase: Math.random() * Math.PI * 2, handled: false });
+    this.runnerObjects.push({ type, rule, sprite, x: 1400, baseY: 610 + rule.yOffset, phase: Math.random() * Math.PI * 2, handled: false, feverSpawn });
   }
 
   private handlePassedObject(object: RunnerObject) {
@@ -743,7 +815,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleRunnerAction(action: SlashAction) {
-    if (this.playerHurtTimer > 0) return;
+    if (this.hitFeedback.isHurt) return;
     this.playPlayerSlash(action === "long_tap");
     const target = this.feverActive
       ? this.runnerObjects.filter((object) => !object.handled && object.x >= 270 && object.x <= 510)
@@ -766,15 +838,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private playPlayerSlash(strong = false) {
-    this.slashTimer = strong ? 0.34 : 0.2;
-    this.applySwordDebugTransform();
-    const attackScale = strong && !this.swordDebugAlwaysVisible ? 1.12 : 1;
-    this.playerSlash.setDisplaySize(this.swordWidth * attackScale, this.swordHeight * attackScale).setAlpha(1);
-    this.tweens.killTweensOf(this.playerSlash);
-    if (!this.swordDebugAlwaysVisible) {
-      this.tweens.add({ targets: this.playerSlash, alpha: 0, duration: this.slashTimer * 1000, ease: "Cubic.Out" });
-    }
+    if (!this.playerVisual?.playSlash(strong)) return;
     this.playSfx("slashSfx", 0.35);
+    triggerHaptic("attack", this.settings);
   }
 
   private successObject(object: RunnerObject) {
@@ -782,15 +848,18 @@ export class GameScene extends Phaser.Scene {
     object.handled = true;
     const multiplier = this.feverActive ? 2 : scoreMultiplier(this.combo);
     this.score += object.rule.score * multiplier;
-    if (!this.feverActive) this.fever = clamp(this.fever + object.rule.fever, 0, MAX_FEVER);
-    this.combo += 1;
+    if (!this.feverActive) {
+      this.fever = clamp(this.fever + object.rule.fever, 0, MAX_FEVER);
+      this.combo += 1;
+      this.comboPopup?.play(this.combo);
+    }
     if (this.fever >= MAX_FEVER) this.startFever();
     this.spawnSlicePieces(object);
     this.showFeedback("+" + object.rule.score * multiplier, COLORS.white);
     // The source object must disappear immediately; only the two slice pieces
     // should remain visible during the short defeat animation.
     this.removeRunnerObject(object);
-    this.cameras.main.shake(50, 0.0025);
+    this.applyImpact(0.05, 4);
     this.updateHud();
   }
 
@@ -808,13 +877,9 @@ export class GameScene extends Phaser.Scene {
     this.health -= 1;
     if (sliced) this.spawnSlicePieces(object, 0xc83f3f);
     this.showFeedback(sliced ? "MISS!" : "-HP", COLORS.red);
-    this.playerHurtTimer = 0.4;
-    this.player.setTexture("playerDamage").setTint(0xff6b6b);
-    this.time.delayedCall(400, () => {
-      if (this.mode === "runner") this.player.setTexture("playerRun" + (this.playerFrame + 1)).clearTint();
-    });
+    this.startPlayerHurt();
     this.removeRunnerObject(object);
-    this.cameras.main.shake(160, 0.006);
+    this.applyImpact(0.04, 5);
     if (this.health <= 0) this.finishResult(false);
     this.updateHud();
   }
@@ -856,6 +921,7 @@ export class GameScene extends Phaser.Scene {
     this.fever = Math.max(0, this.fever - 18);
     this.spawnSlicePieces(object, object.rule.tint);
     this.showFeedback("BROKEN!", COLORS.gold);
+    this.applyImpact(0.04, 3);
     this.removeRunnerObject(object);
     this.updateHud();
   }
@@ -888,15 +954,19 @@ export class GameScene extends Phaser.Scene {
     this.fever = MAX_FEVER;
     this.runnerObjects.forEach((object) => { object.handled = true; object.sprite.destroy(); });
     this.runnerObjects = [];
-    this.feverOverlay?.setVisible(true);
+    this.feverImpact?.start();
     this.feverText?.setVisible(true);
     this.showFeedback("FEVER!", COLORS.cyan);
+    this.applyImpact(0.08, 7);
   }
 
   private endFever() {
     this.feverActive = false;
     this.fever = 0;
-    this.feverOverlay?.setVisible(false);
+    for (const object of [...this.runnerObjects]) {
+      if (object.feverSpawn) this.removeRunnerObject(object);
+    }
+    this.feverImpact?.stop();
     this.feverText?.setVisible(false);
     this.showFeedback("FEVER END", COLORS.white);
   }
@@ -906,6 +976,65 @@ export class GameScene extends Phaser.Scene {
     this.feedbackText.setText(text).setColor("#" + color.toString(16).padStart(6, "0")).setAlpha(1).setScale(1.12);
     this.feedbackTimer = 0.75;
     this.tweens.add({ targets: this.feedbackText, scale: 1, duration: 120 });
+  }
+
+  private applyImpact(hitstopSeconds: number, strength: number) {
+    this.hitFeedback.startHitstop(hitstopSeconds);
+    this.cameras.main.shake(Math.max(40, hitstopSeconds * 1000), strength * 0.00072);
+  }
+
+  private startPlayerHurt() {
+    this.hitFeedback.startHurt();
+    this.playerVisual?.startHurt();
+    this.playSfx("errorSfx", 0.58);
+    triggerHaptic("hurt", this.settings);
+  }
+
+  private installDevelopmentHooks() {
+    if (location.hostname !== "127.0.0.1" && location.hostname !== "localhost") return;
+    const debugWindow = window as Window & { __slashRushDebug?: SlashRushDebugApi };
+    debugWindow.__slashRushDebug = {
+      getState: () => ({
+        mode: this.mode,
+        combo: this.combo,
+        bossCombo: this.bossCombo,
+        feverActive: this.feverActive,
+        bossFeverActive: this.bossFeverActive,
+        hurt: this.hitFeedback.isHurt,
+      }),
+      startRunner: () => this.startRunner(),
+      startBoss: () => this.startBoss(),
+      triggerCombo: () => this.triggerDebugCombo(),
+      triggerFever: () => this.triggerDebugFever(),
+      triggerHurt: () => this.triggerDebugHurt(),
+    };
+  }
+
+  private triggerDebugCombo() {
+    if (this.mode === "runner") {
+      this.combo += 1;
+      this.comboPopup?.play(this.combo);
+    } else if (this.mode === "boss") {
+      this.bossCombo += 1;
+      this.comboPopup?.play(this.bossCombo);
+    }
+    this.updateHud();
+  }
+
+  private triggerDebugFever() {
+    if (this.mode === "runner") {
+      this.fever = MAX_FEVER;
+      this.startFever();
+    } else if (this.mode === "boss") {
+      this.startBossFever();
+    }
+    this.updateHud();
+  }
+
+  private triggerDebugHurt() {
+    if (this.mode !== "runner" && this.mode !== "boss") return;
+    this.startPlayerHurt();
+    this.applyImpact(0.04, 5);
   }
 
   private startBoss() {
@@ -919,10 +1048,12 @@ export class GameScene extends Phaser.Scene {
     this.bossFever = 0;
     this.bossFeverActive = false;
     this.bossFeverTimeLeft = 0;
-    this.track(this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, "bossBackground").setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-100));
+    this.bossVisual = new BossVisualController(this);
     this.createRunnerPlayer();
-    this.buildBossVisual();
     this.buildHud(true);
+    this.feverImpact = new FeverImpactOverlay(this, 12);
+    this.comboPopup = new ComboImpactPopup(this);
+    this.feverText = this.addText(GAME_WIDTH / 2, 220, "TAP!!", 74, COLORS.cream, 0.5, 0.5, 24).setVisible(false);
     this.bossHint = this.addText(GAME_WIDTH / 2, 530, "TAP", 48, COLORS.white, 0.5, 0.5, 24);
     this.bossCueOne = this.track(this.add.image(590, 575, "circle3").setDisplaySize(108, 108).setDepth(23));
     this.bossCueTwo = this.track(this.add.image(690, 575, "circle3").setDisplaySize(108, 108).setDepth(23));
@@ -932,65 +1063,39 @@ export class GameScene extends Phaser.Scene {
     this.nextBossPattern();
   }
 
-  private buildBossVisual() {
-    this.bossContainer = this.track(this.add.container(970, 580).setScale(0.8).setDepth(5));
-    const aura = this.add.circle(0, -275, 235, 0x4e3fca, 0.1);
-    const body = this.add.image(-8, -245, "bossBody").setDisplaySize(390, 470).setOrigin(0.5, 1);
-    const leftArm = this.add.image(-175, -230, "bossLeftArm").setDisplaySize(145, 260).setOrigin(0.5, 1);
-    const rightArm = this.add.image(170, -230, "bossRightArm").setDisplaySize(155, 260).setOrigin(0.5, 1);
-    const leftSword = this.add.image(-215, -260, "bossSword").setDisplaySize(105, 185).setAngle(-12);
-    const rightSword = this.add.image(215, -260, "bossSword").setDisplaySize(105, 185).setAngle(12);
-    const head = this.add.image(6, -480, "bossHead").setDisplaySize(195, 215).setOrigin(0.5, 1);
-    const core = this.add.image(0, -260, "bossCore").setDisplaySize(82, 80);
-    this.bossContainer.add([aura, body, leftArm, rightArm, leftSword, rightSword, head, core]);
-    this.bossBody = body;
-    this.bossLeftArm = leftArm;
-    this.bossRightArm = rightArm;
-    this.bossCore = core;
-  }
-
   private updateBoss(seconds: number) {
-    this.playerFrameTimer += seconds;
-    this.playerHurtTimer = Math.max(0, this.playerHurtTimer - seconds);
-    if (this.playerFrameTimer >= 1 / 12) {
-      this.playerFrameTimer = 0;
-      this.playerFrame = (this.playerFrame + 1) % 4;
-      this.player.setTexture("playerRun" + (this.playerFrame + 1));
-    }
+    this.hitFeedback.update(seconds);
+    this.feedbackTimer = Math.max(0, this.feedbackTimer - seconds);
+    if (this.feedbackTimer <= 0) this.feedbackText?.setAlpha(0);
+    this.playerVisual?.update(seconds, 1);
+    this.feverImpact?.update(seconds);
+    const worldSeconds = seconds * this.hitFeedback.motionScale.world;
+    this.bossVisual?.update(worldSeconds);
     if (this.bossFeverActive) {
       this.bossFeverTimeLeft -= seconds;
+      this.feverText?.setScale(feverTapPulse(5 - this.bossFeverTimeLeft));
       if (this.bossFeverTimeLeft <= 0) {
         this.bossFeverActive = false;
         this.bossFever = 0;
+        this.feverImpact?.stop();
+        this.feverText?.setVisible(false);
         this.showFeedback("FEVER END", COLORS.white);
       }
     }
     if (this.bossNextDelay > 0) {
-      this.bossNextDelay -= seconds;
+      this.bossNextDelay -= worldSeconds;
       if (this.bossNextDelay <= 0 && this.bossHp > 0 && this.health > 0) this.nextBossPattern();
-      this.animateBoss();
       this.updateHud();
       return;
     }
     if (this.bossAction) {
-      this.bossPatternTime -= seconds;
+      this.bossPatternTime -= worldSeconds;
       if (this.bossPatternTime <= 0) {
         if (this.bossAction === "no_input" || this.bossFeverActive) this.successBossPattern(true);
         else this.failBossPattern("MISS");
       }
     }
-    this.animateBoss();
     this.updateHud();
-  }
-
-  private animateBoss() {
-    if (!this.bossContainer) return;
-    this.bossContainer.y = 615 + Math.sin(this.time.now / 550) * 4;
-    if (this.bossAction === "tap") this.bossRightArm?.setAngle(Math.sin(this.time.now / 130) * 14);
-    else if (this.bossAction === "double_tap") {
-      this.bossLeftArm?.setAngle(Math.sin(this.time.now / 105) * 18);
-      this.bossRightArm?.setAngle(-Math.sin(this.time.now / 105) * 18);
-    } else if (this.bossAction === "long_tap") this.bossCore?.setScale(1 + Math.sin(this.time.now / 90) * 0.16);
   }
 
   private nextBossPattern() {
@@ -1001,6 +1106,7 @@ export class GameScene extends Phaser.Scene {
     this.bossAction = pool[this.bossPatternIndex % pool.length];
     this.bossPatternIndex += 1;
     this.bossPatternTime = this.bossAction === "tap" ? 1.85 : this.bossAction === "double_tap" ? 2 : this.bossAction === "long_tap" ? 2.2 : 1.8;
+    this.bossVisual?.startPattern(this.bossAction, this.bossPatternTime);
     this.showBossCue(this.bossAction);
   }
 
@@ -1019,7 +1125,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleBossAction(action: SlashAction) {
-    if (!this.bossAction || this.playerHurtTimer > 0) return;
+    if (!this.bossAction || this.hitFeedback.isHurt) return;
     this.playPlayerSlash(action === "long_tap");
     if (this.bossFeverActive || actionMatches(this.bossAction, action)) this.successBossPattern(false);
     else if ((this.bossAction === "double_tap" || this.bossAction === "long_tap") && action === "tap") this.showFeedback(actionHint(this.bossAction), this.bossAction === "double_tap" ? COLORS.gold : COLORS.blue);
@@ -1032,23 +1138,32 @@ export class GameScene extends Phaser.Scene {
     this.score += this.bossFeverActive ? 400 : 200;
     if (!this.bossFeverActive) {
       this.bossCombo += 1;
+      this.comboPopup?.play(this.bossCombo);
       this.bossFever += 25;
       if (this.bossFever >= MAX_FEVER) {
-        this.bossFeverActive = true;
-        this.bossFeverTimeLeft = 5;
-        this.showFeedback("BOSS FEVER!", COLORS.cyan);
+        this.startBossFever();
       }
     }
     this.spawnBossScrap();
+    this.bossVisual?.endPattern(true);
     this.showFeedback(fromTimeout ? "WAIT" : "HIT", COLORS.white);
     this.bossAction = null;
     this.bossNextDelay = this.bossHp > 0 ? 0.75 : 0;
-    if (this.bossHp <= 0) this.finishResult(true);
+    this.applyImpact(0.05, 4);
+    if (this.bossHp <= 0) {
+      this.feverImpact?.stop();
+      this.feverText?.setVisible(false);
+      this.bossVisual?.defeat();
+      this.time.delayedCall(850, () => {
+        if (this.mode === "boss" && this.bossHp <= 0) this.finishResult(true);
+      });
+    }
   }
 
   private failBossPattern(text: string) {
     if (!this.bossAction) return;
     this.bossAction = null;
+    this.bossVisual?.endPattern(false);
     if (this.bossFeverActive) { this.bossNextDelay = 0.2; this.showFeedback("FEVER", COLORS.cyan); return; }
     if (this.invincibleMode) {
       this.bossNextDelay = 0.2;
@@ -1057,12 +1172,22 @@ export class GameScene extends Phaser.Scene {
     }
     this.health -= 1;
     this.bossCombo = 0;
-    this.playerHurtTimer = 0.4;
-    this.player.setTexture("playerDamage").setTint(0xff6b6b);
+    this.startPlayerHurt();
+    this.applyImpact(0.04, 5);
     this.showFeedback(text, COLORS.red);
-    this.time.delayedCall(400, () => { if (this.mode === "boss") this.player.setTexture("playerRun" + (this.playerFrame + 1)).clearTint(); });
     if (this.health <= 0) this.finishResult(false);
     else this.bossNextDelay = 0.65;
+  }
+
+  private startBossFever() {
+    if (this.bossFeverActive) return;
+    this.bossFeverActive = true;
+    this.bossFever = MAX_FEVER;
+    this.bossFeverTimeLeft = 5;
+    this.feverImpact?.start();
+    this.feverText?.setVisible(true);
+    this.showFeedback("BOSS FEVER!", COLORS.cyan);
+    this.applyImpact(0.08, 7);
   }
 
   private spawnBossScrap() {
@@ -1150,6 +1275,16 @@ export class GameScene extends Phaser.Scene {
     });
     this.input.keyboard?.on("keydown-B", () => { if (this.mode === "runner") this.startBoss(); });
     this.input.keyboard?.on("keydown-R", () => { if (this.mode === "runner" || this.mode === "boss" || this.mode === "result") this.startRunner(); });
+    this.input.keyboard?.on("keydown-C", () => { if (location.hostname === "127.0.0.1" || location.hostname === "localhost") this.triggerDebugCombo(); });
+    this.input.keyboard?.on("keydown-F", () => { if (location.hostname === "127.0.0.1" || location.hostname === "localhost") this.triggerDebugFever(); });
+    this.input.keyboard?.on("keydown-H", () => { if (location.hostname === "127.0.0.1" || location.hostname === "localhost") this.triggerDebugHurt(); });
+    this.input.keyboard?.on("keydown-I", () => {
+      if (location.hostname !== "127.0.0.1" && location.hostname !== "localhost") return;
+      if (this.mode !== "runner" && this.mode !== "boss") return;
+      this.invincibleMode = !this.invincibleMode;
+      this.updateSettingsLabels();
+      this.updateHud();
+    });
   }
 
   private dispatchPress(durationMs: number) {

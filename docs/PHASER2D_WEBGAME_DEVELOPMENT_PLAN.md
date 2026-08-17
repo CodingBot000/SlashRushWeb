@@ -117,7 +117,9 @@ public/assets/godot-source/assets/
 - [x] Vitest 규칙 테스트 및 Vite production build
 - [x] 브라우저 인트로/메뉴/러너/보스 진입과 콘솔 오류 점검
 - [x] 모바일 가로 844×390 16:9 FIT 및 세로 390×844 안내/캔버스 숨김 확인
-- [ ] 원본 Godot와 프레임 단위 플레이 패리티 비교
+- [x] 원본 Godot와 프레임 단위 플레이 패리티 비교 및 누락 연출 복구
+  - 상세 실행 계획: [Godot → Phaser 연출 패리티 복구 개발계획서](./GODOT_EFFECT_PARITY_DEVELOPMENT_PLAN.md)
+  - 사용자 보류: Sword Debug 제거, `BOSS FEVER!`/`HIT` 메시지 우선순위 조정
 - [x] GitHub 원격 `SlashRushWeb` 신규 생성 및 push
 - [x] Vercel production 배포 최신본 확인
 
