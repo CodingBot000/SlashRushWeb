@@ -95,6 +95,7 @@ public/assets/godot-source/assets/
 - 게임 논리 화면은 1280×720으로 고정한다.
 - `Phaser.Scale.FIT`와 중앙 정렬로 비율을 유지한다.
 - 세로 화면에서는 게임 입력을 막고 `#orientation-lock` 가로모드 안내를 표시한다.
+- 세로 화면에서는 Phaser 캔버스를 숨겨 안내 카드가 게임 화면과 겹치지 않게 한다.
 - 터치 이벤트의 press duration으로 TAP/HOLD를 구분하고, 더블 탭 시간창은 0.25초로 둔다.
 - HUD와 보스 게이지는 1280×720 기준 안전 영역 안에 배치한다.
 
@@ -107,8 +108,11 @@ public/assets/godot-source/assets/
 - [x] 60초 러너, HP 3, 콤보, Fever, 코인, 로컬 최고 점수
 - [x] 모바일 터치와 데스크톱 키보드 입력 통합
 - [x] 원본 배경 매트 제거 셰이더를 Canvas 픽셀 처리로 변환
+- [x] 적 처리 시 원본 스프라이트 제거 후 분할 조각만 0.62초 표시
+- [x] 웹판 플레이어 기준에 맞춰 베기 칼 표시 크기 조정
 - [x] Vitest 규칙 테스트 및 Vite production build
 - [x] 브라우저 인트로/메뉴/러너/보스 진입과 콘솔 오류 점검
+- [x] 모바일 가로 844×390 16:9 FIT 및 세로 390×844 안내/캔버스 숨김 확인
 - [ ] 원본 Godot와 프레임 단위 플레이 패리티 비교
 - [x] GitHub 원격 `SlashRushWeb` 신규 생성 및 push
 - [x] Vercel production 배포 최신본 확인
@@ -126,7 +130,7 @@ npm run dev    : http://127.0.0.1:4173/
 
 1. 인트로 탭/Space → 원본 로고 메뉴 표시
 2. PLAY → 원본 배경, 고정 플레이어, 오브젝트 입력 안내 표시
-3. TAP/TAP TAP/HOLD 및 아이템 무입력 통과 판정
+3. TAP/TAP TAP/HOLD 및 아이템 무입력 통과 판정, 적 원본 제거·분할 조각 소멸
 4. `B` → 보스 배경, 로봇 사무라이, 보스 HP/패턴 HUD 표시
 5. 결과 화면 RETRY/MENU, 최고 점수·코인 저장
 6. 가로 모바일 화면 스케일링과 세로 화면 가로모드 안내

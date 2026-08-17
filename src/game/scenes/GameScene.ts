@@ -468,7 +468,10 @@ export class GameScene extends Phaser.Scene {
 
   private createRunnerPlayer() {
     this.player = this.track(this.add.sprite(210, 610, "playerRun1").setOrigin(0.5, 1).setDisplaySize(231, 230).setDepth(5));
-    this.playerSlash = this.track(this.add.image(318, 520, "swordSlash").setDisplaySize(245, 139).setDepth(6).setAlpha(0));
+    // Keep the full arm-and-sword source art subordinate to the runner.
+    // The original Godot scene scales this layer from the player sprite, but
+    // the browser's fixed display box made the blade read much too large.
+    this.playerSlash = this.track(this.add.image(292, 520, "swordSlash").setDisplaySize(185, 105).setDepth(6).setAlpha(0));
     this.playerSlash.setRotation(Phaser.Math.DegToRad(20));
   }
 
@@ -608,7 +611,9 @@ export class GameScene extends Phaser.Scene {
     if (this.fever >= MAX_FEVER) this.startFever();
     this.spawnSlicePieces(object);
     this.showFeedback("+" + object.rule.score * multiplier, COLORS.white);
-    this.removeRunnerObject(object, false);
+    // The source object must disappear immediately; only the two slice pieces
+    // should remain visible during the short defeat animation.
+    this.removeRunnerObject(object);
     this.cameras.main.shake(50, 0.0025);
     this.updateHud();
   }
@@ -626,7 +631,7 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(400, () => {
       if (this.mode === "runner") this.player.setTexture("playerRun" + (this.playerFrame + 1)).clearTint();
     });
-    this.removeRunnerObject(object, false);
+    this.removeRunnerObject(object);
     this.cameras.main.shake(160, 0.006);
     if (this.health <= 0) this.finishResult(false);
     this.updateHud();
@@ -669,7 +674,7 @@ export class GameScene extends Phaser.Scene {
     this.fever = Math.max(0, this.fever - 18);
     this.spawnSlicePieces(object, object.rule.tint);
     this.showFeedback("BROKEN!", COLORS.gold);
-    this.removeRunnerObject(object, false);
+    this.removeRunnerObject(object);
     this.updateHud();
   }
 
