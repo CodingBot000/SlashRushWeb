@@ -59,10 +59,10 @@ export class GameScene extends Phaser.Scene {
   private playerFrameTimer = 0;
   private playerHurtTimer = 0;
   private slashTimer = 0;
-  private swordX = 292;
-  private swordY = 520;
-  private swordWidth = 185;
-  private swordHeight = 105;
+  private swordX = 342;
+  private swordY = 480;
+  private swordWidth = 195;
+  private swordHeight = 111;
   private swordDebugAlwaysVisible = true;
   private invincibleMode = false;
   private feedbackTimer = 0;
@@ -349,10 +349,10 @@ export class GameScene extends Phaser.Scene {
       this.applySwordDebugTransform();
       this.updateSettingsLabels();
     });
-    this.makeSwordDebugButton(panel, "X -10", 72, 188, 120, 42, () => this.adjustSword(-10, 0, 0));
-    this.makeSwordDebugButton(panel, "X +10", 208, 188, 120, 42, () => this.adjustSword(10, 0, 0));
-    this.makeSwordDebugButton(panel, "Y -10", 72, 240, 120, 42, () => this.adjustSword(0, -10, 0));
-    this.makeSwordDebugButton(panel, "Y +10", 208, 240, 120, 42, () => this.adjustSword(0, 10, 0));
+    this.makeSwordDebugButton(panel, "X -1", 72, 188, 120, 42, () => this.adjustSword(-1, 0, 0));
+    this.makeSwordDebugButton(panel, "X +1", 208, 188, 120, 42, () => this.adjustSword(1, 0, 0));
+    this.makeSwordDebugButton(panel, "Y -1", 72, 240, 120, 42, () => this.adjustSword(0, -1, 0));
+    this.makeSwordDebugButton(panel, "Y +1", 208, 240, 120, 42, () => this.adjustSword(0, 1, 0));
     this.makeSwordDebugButton(panel, "SIZE -10", 72, 292, 120, 42, () => this.adjustSword(0, 0, -10));
     this.makeSwordDebugButton(panel, "SIZE +10", 208, 292, 120, 42, () => this.adjustSword(0, 0, 10));
     panel.add(this.add.text(140, 355, "Adjust X / Y / SIZE\nlive during play.", {
@@ -421,7 +421,7 @@ export class GameScene extends Phaser.Scene {
     this.swordY += deltaY;
     if (deltaSize !== 0) {
       this.swordWidth = Math.max(55, this.swordWidth + deltaSize);
-      this.swordHeight = Math.max(32, Math.round(this.swordWidth * (105 / 185)));
+      this.swordHeight = Math.max(32, Math.round(this.swordWidth * (111 / 195)));
     }
     this.applySwordDebugTransform();
     this.updateSettingsLabels();
@@ -633,7 +633,7 @@ export class GameScene extends Phaser.Scene {
     // Keep the full arm-and-sword source art subordinate to the runner.
     // The original Godot scene scales this layer from the player sprite, but
     // the browser's fixed display box made the blade read much too large.
-    this.playerSlash = this.track(this.add.image(this.swordX, this.swordY, "swordSlash").setDisplaySize(this.swordWidth, this.swordHeight).setDepth(6).setAlpha(this.swordDebugAlwaysVisible ? 1 : 0));
+    this.playerSlash = this.track(this.add.image(this.swordX, this.swordY, "swordSlash").setDisplaySize(this.swordWidth, this.swordHeight).setDepth(4).setAlpha(this.swordDebugAlwaysVisible ? 1 : 0));
     this.playerSlash.setRotation(Phaser.Math.DegToRad(20));
   }
 
