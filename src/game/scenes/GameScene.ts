@@ -90,6 +90,9 @@ export class GameScene extends Phaser.Scene {
   private feedbackText?: Phaser.GameObjects.Text;
   private pauseButton?: Phaser.GameObjects.Text;
   private settingsButton?: Phaser.GameObjects.Image;
+  private swordDebugRoot?: Phaser.GameObjects.Container;
+  private swordDebugPanel?: Phaser.GameObjects.Container;
+  private swordDebugToggleLabel?: Phaser.GameObjects.Text;
   private swordDebugValueText?: Phaser.GameObjects.Text;
   private swordAlwaysLabel?: Phaser.GameObjects.Text;
   private invincibleLabel?: Phaser.GameObjects.Text;
@@ -196,6 +199,9 @@ export class GameScene extends Phaser.Scene {
     this.hintText = undefined;
     this.feedbackText = undefined;
     this.settingsButton = undefined;
+    this.swordDebugRoot = undefined;
+    this.swordDebugPanel = undefined;
+    this.swordDebugToggleLabel = undefined;
     this.swordDebugValueText = undefined;
     this.swordAlwaysLabel = undefined;
     this.invincibleLabel = undefined;
@@ -269,43 +275,26 @@ export class GameScene extends Phaser.Scene {
       this.pauseButton?.setText("▶");
     }
     const shade = this.track(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.ink, 0.72).setDepth(40));
-    const panel = this.track(this.add.rectangle(GAME_WIDTH / 2, 360, 760, 600, COLORS.panel, 0.98).setStrokeStyle(2, COLORS.gold, 1).setDepth(41));
+    const panel = this.track(this.add.rectangle(GAME_WIDTH / 2, 360, 500, 330, COLORS.panel, 0.98).setStrokeStyle(2, COLORS.gold, 1).setDepth(41));
     this.stateObjects.push(shade, panel);
-    const title = this.addText(GAME_WIDTH / 2, 94, "SETTING", 36, COLORS.cream, 0.5, 0.5, 42);
-    const note = this.addText(GAME_WIDTH / 2, 132, "Temporary tuning tools for the player sword", 16, COLORS.muted, 0.5, 0.5, 42);
-    const audio = this.addText(390, 175, "AUDIO  100%", 14, COLORS.white, 0, 0.5, 42);
-    const attackVibration = this.addText(640, 175, "ATTACK VIBRATION  ON", 14, COLORS.muted, 0.5, 0.5, 42);
-    const hurtVibration = this.addText(890, 175, "HURT VIBRATION  ON", 14, COLORS.muted, 1, 0.5, 42);
+    const title = this.addText(GAME_WIDTH / 2, 242, "SETTING", 36, COLORS.cream, 0.5, 0.5, 42);
+    const note = this.addText(GAME_WIDTH / 2, 278, "Game settings", 16, COLORS.muted, 0.5, 0.5, 42);
+    const audio = this.addText(420, 330, "AUDIO  100%", 14, COLORS.white, 0, 0.5, 42);
+    const attackVibration = this.addText(640, 330, "ATTACK VIBRATION  ON", 14, COLORS.muted, 0.5, 0.5, 42);
+    const hurtVibration = this.addText(640, 365, "HURT VIBRATION  ON", 14, COLORS.muted, 0.5, 0.5, 42);
     this.stateObjects.push(title, note, audio, attackVibration, hurtVibration);
-    this.swordAlwaysLabel = this.makeOverlayButton("SWORD ALWAYS: ON", 450, 225, 250, 48, () => {
-      this.swordDebugAlwaysVisible = !this.swordDebugAlwaysVisible;
-      this.applySwordDebugTransform();
-      this.updateSettingsLabels();
-    });
-    this.invincibleLabel = this.makeOverlayButton("INVINCIBLE: OFF", 830, 225, 250, 48, () => {
+    this.invincibleLabel = this.makeOverlayButton("INVINCIBLE: OFF", GAME_WIDTH / 2, 438, 250, 48, () => {
       this.invincibleMode = !this.invincibleMode;
       this.updateSettingsLabels();
       this.updateHud();
     });
-    const debugTitle = this.addText(GAME_WIDTH / 2, 282, "SWORD DEBUG", 24, COLORS.cyan, 0.5, 0.5, 42);
-    this.swordDebugValueText = this.addText(GAME_WIDTH / 2, 316, "", 18, COLORS.white, 0.5, 0.5, 42);
-    const debugTip = this.addText(GAME_WIDTH / 2, 484, "Move the sword until its hand sits in front of the runner.", 15, COLORS.muted, 0.5, 0.5, 42);
-    this.stateObjects.push(debugTitle, this.swordDebugValueText, debugTip);
-    this.makeOverlayButton("X -10", 380, 370, 120, 48, () => this.adjustSword(-10, 0, 0));
-    this.makeOverlayButton("X +10", 520, 370, 120, 48, () => this.adjustSword(10, 0, 0));
-    this.makeOverlayButton("Y -10", 680, 370, 120, 48, () => this.adjustSword(0, -10, 0));
-    this.makeOverlayButton("Y +10", 820, 370, 120, 48, () => this.adjustSword(0, 10, 0));
-    this.makeOverlayButton("SIZE -10", 515, 430, 140, 48, () => this.adjustSword(0, 0, -10));
-    this.makeOverlayButton("SIZE +10", 765, 430, 140, 48, () => this.adjustSword(0, 0, 10));
-    this.makeOverlayButton("CLOSE", GAME_WIDTH / 2, 565, 170, 54, () => this.closeOverlayCard());
+    this.makeOverlayButton("CLOSE", GAME_WIDTH / 2, 495, 170, 48, () => this.closeOverlayCard());
     this.updateSettingsLabels();
   }
 
   private closeOverlayCard() {
     for (const object of this.stateObjects) object.destroy();
     this.stateObjects = [];
-    this.swordDebugValueText = undefined;
-    this.swordAlwaysLabel = undefined;
     this.invincibleLabel = undefined;
     this.settingsOverlayOpen = false;
     if (this.mode === "runner" || this.mode === "boss") {
@@ -320,6 +309,103 @@ export class GameScene extends Phaser.Scene {
     this.stateObjects.push(button, label);
     button.on("pointerdown", callback);
     return label;
+  }
+
+  private createSwordDebugPanel() {
+    const root = this.track(this.add.container(1000, 90).setDepth(34));
+    const toggle = this.add.rectangle(140, 0, 280, 44, COLORS.panel, 0.96)
+      .setStrokeStyle(2, COLORS.cyan, 1)
+      .setInteractive({ useHandCursor: true });
+    const toggleLabel = this.add.text(140, 0, "SWORD DEBUG ▲", {
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "16px",
+      fontStyle: "bold",
+      color: "#" + COLORS.white.toString(16).padStart(6, "0"),
+      stroke: "#070a11",
+      strokeThickness: 2,
+    }).setOrigin(0.5);
+    const panel = this.add.container(0, 26);
+    const panelBackground = this.add.rectangle(140, 245, 280, 440, COLORS.panel, 0.96)
+      .setStrokeStyle(2, COLORS.cyan, 1);
+    panel.add(panelBackground);
+    panel.add(this.add.text(140, 58, "SWORD DEBUG", {
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "18px",
+      fontStyle: "bold",
+      color: "#" + COLORS.cyan.toString(16).padStart(6, "0"),
+      stroke: "#070a11",
+      strokeThickness: 2,
+    }).setOrigin(0.5));
+    this.swordDebugValueText = this.add.text(140, 88, "", {
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "15px",
+      color: "#" + COLORS.white.toString(16).padStart(6, "0"),
+      stroke: "#070a11",
+      strokeThickness: 2,
+    }).setOrigin(0.5);
+    panel.add(this.swordDebugValueText);
+    this.swordAlwaysLabel = this.makeSwordDebugButton(panel, "SWORD ALWAYS: ON", 140, 128, 240, 40, () => {
+      this.swordDebugAlwaysVisible = !this.swordDebugAlwaysVisible;
+      this.applySwordDebugTransform();
+      this.updateSettingsLabels();
+    });
+    this.makeSwordDebugButton(panel, "X -10", 72, 188, 120, 42, () => this.adjustSword(-10, 0, 0));
+    this.makeSwordDebugButton(panel, "X +10", 208, 188, 120, 42, () => this.adjustSword(10, 0, 0));
+    this.makeSwordDebugButton(panel, "Y -10", 72, 240, 120, 42, () => this.adjustSword(0, -10, 0));
+    this.makeSwordDebugButton(panel, "Y +10", 208, 240, 120, 42, () => this.adjustSword(0, 10, 0));
+    this.makeSwordDebugButton(panel, "SIZE -10", 72, 292, 120, 42, () => this.adjustSword(0, 0, -10));
+    this.makeSwordDebugButton(panel, "SIZE +10", 208, 292, 120, 42, () => this.adjustSword(0, 0, 10));
+    panel.add(this.add.text(140, 355, "Adjust X / Y / SIZE\nlive during play.", {
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "14px",
+      color: "#" + COLORS.muted.toString(16).padStart(6, "0"),
+      align: "center",
+      stroke: "#070a11",
+      strokeThickness: 2,
+    }).setOrigin(0.5));
+    root.add([toggle, toggleLabel, panel]);
+    this.swordDebugRoot = root;
+    this.swordDebugPanel = panel;
+    this.swordDebugToggleLabel = toggleLabel;
+    toggle.on("pointerdown", () => {
+      this.playSfx("uiClick", 0.4);
+      this.setSwordDebugPanelOpen(!panel.visible);
+    });
+    this.setSwordDebugPanelOpen(true);
+    this.updateSettingsLabels();
+  }
+
+  private makeSwordDebugButton(
+    parent: Phaser.GameObjects.Container,
+    text: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    callback: () => void,
+  ) {
+    const button = this.add.rectangle(x, y, width, height, COLORS.gold, 1)
+      .setStrokeStyle(1, COLORS.cream, 0.85)
+      .setInteractive({ useHandCursor: true });
+    const label = this.add.text(x, y, text, {
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "15px",
+      fontStyle: "bold",
+      color: "#" + COLORS.ink.toString(16).padStart(6, "0"),
+      stroke: "#" + COLORS.cream.toString(16).padStart(6, "0"),
+      strokeThickness: 1,
+    }).setOrigin(0.5);
+    parent.add([button, label]);
+    button.on("pointerdown", () => {
+      this.playSfx("uiClick", 0.4);
+      callback();
+    });
+    return label;
+  }
+
+  private setSwordDebugPanelOpen(open: boolean) {
+    this.swordDebugPanel?.setVisible(open);
+    this.swordDebugToggleLabel?.setText("SWORD DEBUG " + (open ? "▲" : "▼"));
   }
 
   private updateSettingsLabels() {
@@ -517,6 +603,7 @@ export class GameScene extends Phaser.Scene {
     this.settingsButton.on("pointerdown", () => { this.playSfx("uiClick", 0.4); this.showSettingsCard(); });
     this.pauseButton = this.addText(1218, 30, "Ⅱ", 28, COLORS.white, 0.5, 0.5, 25).setInteractive({ useHandCursor: true });
     this.pauseButton.on("pointerdown", () => this.togglePause());
+    this.createSwordDebugPanel();
     if (boss) {
       this.track(this.add.rectangle(956, 84, 304, 20, COLORS.ink, 0.55).setOrigin(0, 0.5).setDepth(19));
       this.bossFill = this.track(this.add.rectangle(958, 84, 300, 16, COLORS.red, 1).setOrigin(0, 0.5).setDepth(20));
@@ -1027,7 +1114,9 @@ export class GameScene extends Phaser.Scene {
 
   private createInput() {
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      if ((this.mode === "runner" || this.mode === "boss") && pointer.x > 1140 && pointer.y < 100) return;
+      const swordDebugOpen = this.swordDebugPanel?.visible ?? false;
+      const inSwordDebugArea = pointer.x > 990 && pointer.y >= 65 && pointer.y <= (swordDebugOpen ? 580 : 120);
+      if ((this.mode === "runner" || this.mode === "boss") && ((pointer.x > 1140 && pointer.y < 100) || inSwordDebugArea)) return;
       if (this.mode === "intro") { this.showMenu(); return; }
       if (this.mode !== "runner" && this.mode !== "boss") return;
       this.pressStartedAt = performance.now();
