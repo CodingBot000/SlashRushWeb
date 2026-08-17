@@ -1,8 +1,10 @@
 import Phaser from "phaser";
 
 const ASSET = "/assets/godot-source/assets";
+const GENERATED_ASSET = "/assets/generated";
 
 export const assetPath = (relativePath: string) => `${ASSET}/${relativePath}`;
+const generatedAssetPath = (relativePath: string) => `${GENERATED_ASSET}/${relativePath}`;
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -42,13 +44,13 @@ export class BootScene extends Phaser.Scene {
     this.load.image("swordSlash", assetPath("sprites/samurai/run/sword_slash.png"));
     this.load.image("slashEffect", assetPath("sprites/effect/slash_sword/slash_effect.png"));
 
-    this.load.image("enemyBasic", assetPath("objects/scarecrow2.png"));
-    this.load.image("enemyBasicSlice", assetPath("objects/scarecrow1.png"));
-    this.load.image("enemyFast", assetPath("objects/red_ghost2.png"));
-    this.load.image("enemyFastSlice", assetPath("objects/red_ghost1.png"));
-    this.load.image("enemyArmor", assetPath("objects/drum2.png"));
-    this.load.image("enemyArmorSlice", assetPath("objects/drum1.png"));
-    this.load.image("bomb", assetPath("objects/apple_rotten.png"));
+    this.load.image("enemyBasic", generatedAssetPath("enemies/scarecrow_pixel.png"));
+    this.load.image("enemyBasicSlice", generatedAssetPath("enemies/scarecrow_pixel.png"));
+    this.load.image("enemyFast", generatedAssetPath("enemies/fire_ghost_pixel.png"));
+    this.load.image("enemyFastSlice", generatedAssetPath("enemies/fire_ghost_pixel.png"));
+    this.load.image("enemyArmor", generatedAssetPath("enemies/iron_kettle_armor_pixel.png"));
+    this.load.image("enemyArmorSlice", generatedAssetPath("enemies/iron_kettle_armor_pixel.png"));
+    this.load.image("bomb", generatedAssetPath("enemies/rotten_apple_bomb_pixel.png"));
     this.load.image("coin", assetPath("objects/coin.png"));
     this.load.image("heal", assetPath("objects/apple.png"));
     this.load.image("feverOrb", assetPath("items/fever_orb.png"));
