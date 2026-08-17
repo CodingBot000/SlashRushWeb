@@ -59,14 +59,18 @@ export class BootScene extends Phaser.Scene {
     this.load.image("heal", assetPath("objects/apple.png"));
     this.load.image("feverOrb", assetPath("items/fever_orb.png"));
 
-    this.load.image("bossBody", assetPath("boss/robot_samurai/boss_body.png"));
-    this.load.image("bossHead", assetPath("boss/robot_samurai/boss_head.png"));
-    this.load.image("bossLeftArm", assetPath("boss/robot_samurai/boss_left_arm.png"));
-    this.load.image("bossRightArm", assetPath("boss/robot_samurai/boss_right_arm.png"));
-    this.load.image("bossSword", assetPath("boss/robot_samurai/boss_sword.png"));
-    this.load.image("bossCore", assetPath("boss/robot_samurai/boss_core.png"));
-    this.load.image("bossClothLeft", assetPath("boss/robot_samurai/boss_cloth_left.png"));
-    this.load.image("bossClothRight", assetPath("boss/robot_samurai/boss_cloth_right.png"));
+    this.load.spritesheet("bossPixelSpiritBody", generatedAssetPath("boss-pixel-v1/sprites/spirit_body_sheet.png"), {
+      frameWidth: 508,
+      frameHeight: 719,
+    });
+    this.load.spritesheet("bossPixelSpiritAura", generatedAssetPath("boss-pixel-v1/sprites/spirit_aura_sheet.png"), {
+      frameWidth: 497,
+      frameHeight: 648,
+    });
+    this.load.image("bossPixelArmorWaist", generatedAssetPath("boss-pixel-v1/layers/armor_waist.png"));
+    this.load.image("bossPixelArmorHead", generatedAssetPath("boss-pixel-v1/layers/armor_head.png"));
+    this.load.image("bossPixelArmorRight", generatedAssetPath("boss-pixel-v1/layers/armor_right_arm_shoulder.png"));
+    this.load.image("bossPixelArmorLeftSword", generatedAssetPath("boss-pixel-v1/layers/armor_left_arm_shoulder_sword.png"));
     for (let index = 1; index <= 7; index += 1) {
       this.load.image(`scrap${index}`, assetPath(`boss/robot_samurai/scrap${index}.png`));
     }
@@ -82,6 +86,35 @@ export class BootScene extends Phaser.Scene {
   }
 
   create() {
+    const pixelBossTextures = [
+      "bossPixelSpiritBody",
+      "bossPixelSpiritAura",
+      "bossPixelArmorWaist",
+      "bossPixelArmorHead",
+      "bossPixelArmorRight",
+      "bossPixelArmorLeftSword",
+    ];
+    for (const key of pixelBossTextures) {
+      this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+    }
+
+    if (!this.anims.exists("bossPixelSpiritBodyIdle")) {
+      this.anims.create({
+        key: "bossPixelSpiritBodyIdle",
+        frames: [0, 1, 2, 1].map((frame) => ({ key: "bossPixelSpiritBody", frame })),
+        frameRate: 1000 / 220,
+        repeat: -1,
+      });
+    }
+    if (!this.anims.exists("bossPixelSpiritAuraIdle")) {
+      this.anims.create({
+        key: "bossPixelSpiritAuraIdle",
+        frames: [0, 1, 2, 3].map((frame) => ({ key: "bossPixelSpiritAura", frame })),
+        frameRate: 1000 / 120,
+        repeat: -1,
+      });
+    }
+
     this.scene.start("GameScene");
   }
 }

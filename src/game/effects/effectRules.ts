@@ -1,8 +1,16 @@
+import type { RequiredAction } from "../rules";
+
 export const COMBO_DIGIT_START_X = 490;
 export const COMBO_DIGIT_SIZE = 250;
 export const COMBO_DIGIT_ADVANCE = 180;
 
 export type BossMotionPhase = "windup" | "strike" | "recover";
+
+export interface BossActionMotion {
+  phase: BossMotionPhase;
+  progress: number;
+  strikeBeat: 0 | 1 | 2;
+}
 
 export function comboDigits(combo: number) {
   return String(Math.max(0, Math.floor(combo))).split("").map(Number);
@@ -23,4 +31,11 @@ export function bossMotionPhase(progress: number): { phase: BossMotionPhase; pro
   if (value < 0.56) return { phase: "windup", progress: value / 0.56 };
   if (value < 0.72) return { phase: "strike", progress: (value - 0.56) / 0.16 };
   return { phase: "recover", progress: (value - 0.72) / 0.28 };
+}
+
+export function bossActionMotion(action: RequiredAction, progress: number): BossActionMotion {
+  const motion = bossMotionPhase(progress);
+  if (motion.phase !== "strike" || action === "no_input") return { ...motion, strikeBeat: 0 };
+  if (action === "double_tap") return { ...motion, strikeBeat: motion.progress < 0.5 ? 1 : 2 };
+  return { ...motion, strikeBeat: 1 };
 }

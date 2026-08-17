@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bossMotionPhase, comboDigits, comboLayoutWidth, feverTapPulse } from "./effectRules";
+import { bossActionMotion, bossMotionPhase, comboDigits, comboLayoutWidth, feverTapPulse } from "./effectRules";
 
 describe("effect parity rules", () => {
   it("maps combo values to reusable digit textures", () => {
@@ -20,5 +20,13 @@ describe("effect parity rules", () => {
     expect(bossMotionPhase(0.2).phase).toBe("windup");
     expect(bossMotionPhase(0.6).phase).toBe("strike");
     expect(bossMotionPhase(0.9).phase).toBe("recover");
+  });
+
+  it("maps boss input patterns to distinct attack beats", () => {
+    expect(bossActionMotion("tap", 0.64).strikeBeat).toBe(1);
+    expect(bossActionMotion("double_tap", 0.58).strikeBeat).toBe(1);
+    expect(bossActionMotion("double_tap", 0.69).strikeBeat).toBe(2);
+    expect(bossActionMotion("long_tap", 0.64).strikeBeat).toBe(1);
+    expect(bossActionMotion("no_input", 0.64).strikeBeat).toBe(0);
   });
 });

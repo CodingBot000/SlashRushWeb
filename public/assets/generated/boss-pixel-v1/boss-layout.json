@@ -1,0 +1,275 @@
+{
+  "version": 1,
+  "status": "integrated-phaser",
+  "masterCanvas": {
+    "width": 640,
+    "height": 725,
+    "coordinateOrigin": "top-left"
+  },
+  "placementRule": "Place cropped assets at placement.x/y with origin 0,0. For rotating armor, use pivot.origin and pivot.position instead.",
+  "layerOrderBackToFront": [
+    "spiritAura",
+    "spiritBody",
+    "armorWaist",
+    "armorHead",
+    "armorRightArmShoulder",
+    "armorLeftArmShoulderSword"
+  ],
+  "layers": {
+    "spiritAura": {
+      "path": "layers/spirit_aura.png",
+      "zIndex": 0,
+      "offset": {
+        "x": 71,
+        "y": 47
+      },
+      "size": {
+        "width": 497,
+        "height": 648
+      },
+      "placement": {
+        "originX": 0,
+        "originY": 0,
+        "x": 71,
+        "y": 47
+      }
+    },
+    "spiritBody": {
+      "path": "layers/spirit_body.png",
+      "zIndex": 10,
+      "offset": {
+        "x": 66,
+        "y": 0
+      },
+      "size": {
+        "width": 508,
+        "height": 719
+      },
+      "placement": {
+        "originX": 0,
+        "originY": 0,
+        "x": 66,
+        "y": 0
+      }
+    },
+    "armorWaist": {
+      "path": "layers/armor_waist.png",
+      "zIndex": 20,
+      "offset": {
+        "x": 171,
+        "y": 301
+      },
+      "size": {
+        "width": 405,
+        "height": 286
+      },
+      "placement": {
+        "originX": 0,
+        "originY": 0,
+        "x": 171,
+        "y": 301
+      },
+      "pivot": {
+        "masterX": 392,
+        "masterY": 390,
+        "localX": 221,
+        "localY": 89,
+        "originX": 0.545679,
+        "originY": 0.311189,
+        "positionX": 392,
+        "positionY": 390
+      }
+    },
+    "armorHead": {
+      "path": "layers/armor_head.png",
+      "zIndex": 30,
+      "offset": {
+        "x": 149,
+        "y": 55
+      },
+      "size": {
+        "width": 230,
+        "height": 254
+      },
+      "placement": {
+        "originX": 0,
+        "originY": 0,
+        "x": 149,
+        "y": 55
+      },
+      "pivot": {
+        "masterX": 286,
+        "masterY": 285,
+        "localX": 137,
+        "localY": 230,
+        "originX": 0.595652,
+        "originY": 0.905512,
+        "positionX": 286,
+        "positionY": 285
+      }
+    },
+    "armorRightArmShoulder": {
+      "path": "layers/armor_right_arm_shoulder.png",
+      "zIndex": 40,
+      "offset": {
+        "x": 325,
+        "y": 106
+      },
+      "size": {
+        "width": 270,
+        "height": 297
+      },
+      "placement": {
+        "originX": 0,
+        "originY": 0,
+        "x": 325,
+        "y": 106
+      },
+      "pivot": {
+        "masterX": 377,
+        "masterY": 220,
+        "localX": 52,
+        "localY": 114,
+        "originX": 0.192593,
+        "originY": 0.383838,
+        "positionX": 377,
+        "positionY": 220
+      }
+    },
+    "armorLeftArmShoulderSword": {
+      "path": "layers/armor_left_arm_shoulder_sword.png",
+      "zIndex": 50,
+      "offset": {
+        "x": 21,
+        "y": 95
+      },
+      "size": {
+        "width": 367,
+        "height": 502
+      },
+      "placement": {
+        "originX": 0,
+        "originY": 0,
+        "x": 21,
+        "y": 95
+      },
+      "pivot": {
+        "masterX": 210,
+        "masterY": 345,
+        "localX": 189,
+        "localY": 250,
+        "originX": 0.514986,
+        "originY": 0.498008,
+        "positionX": 210,
+        "positionY": 345
+      }
+    }
+  },
+  "animations": {
+    "spiritBody": {
+      "path": "sprites/spirit_body_sheet.png",
+      "columns": 3,
+      "rows": 1,
+      "offset": {
+        "x": 66,
+        "y": 0
+      },
+      "durationMsPerFrame": 220,
+      "loopSequence": [
+        0,
+        1,
+        2,
+        1
+      ],
+      "frames": [
+        {
+          "index": 0,
+          "x": 0,
+          "y": 0,
+          "width": 508,
+          "height": 719
+        },
+        {
+          "index": 1,
+          "x": 508,
+          "y": 0,
+          "width": 508,
+          "height": 719
+        },
+        {
+          "index": 2,
+          "x": 1016,
+          "y": 0,
+          "width": 508,
+          "height": 719
+        }
+      ]
+    },
+    "spiritAura": {
+      "path": "sprites/spirit_aura_sheet.png",
+      "columns": 2,
+      "rows": 2,
+      "offset": {
+        "x": 71,
+        "y": 47
+      },
+      "durationMsPerFrame": 120,
+      "loopSequence": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frames": [
+        {
+          "index": 0,
+          "x": 0,
+          "y": 0,
+          "width": 497,
+          "height": 648
+        },
+        {
+          "index": 1,
+          "x": 497,
+          "y": 0,
+          "width": 497,
+          "height": 648
+        },
+        {
+          "index": 2,
+          "x": 0,
+          "y": 648,
+          "width": 497,
+          "height": 648
+        },
+        {
+          "index": 3,
+          "x": 497,
+          "y": 648,
+          "width": 497,
+          "height": 648
+        }
+      ]
+    }
+  },
+  "recommendedRuntime": {
+    "containerOrigin": {
+      "x": 0,
+      "y": 0
+    },
+    "masterScale": 1,
+    "filter": "nearest",
+    "auraBlendMode": "ADD",
+    "auraAlpha": 0.78,
+    "note": "Loaded by BootScene and assembled by BossVisualController."
+  },
+  "debugPreview": {
+    "path": "preview/boss_layout_debug.png",
+    "colors": {
+      "armorWaist": "#5aebff",
+      "armorHead": "#ffdd50",
+      "armorRightArmShoulder": "#78ff96",
+      "armorLeftArmShoulderSword": "#ff6487"
+    }
+  }
+}
