@@ -110,7 +110,7 @@ public/assets/godot-source/assets/
 - [x] Vitest 규칙 테스트 및 Vite production build
 - [x] 브라우저 인트로/메뉴/러너/보스 진입과 콘솔 오류 점검
 - [ ] 원본 Godot와 프레임 단위 플레이 패리티 비교
-- [ ] GitHub 원격 `SlashRushWeb` 신규 생성 및 push
+- [x] GitHub 원격 `SlashRushWeb` 신규 생성 및 push
 - [ ] Vercel production 배포 최신본 확인
 
 ## 7. QA 체크리스트
