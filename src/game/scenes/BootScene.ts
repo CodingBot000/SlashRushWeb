@@ -57,7 +57,7 @@ export class BootScene extends Phaser.Scene {
     this.load.image("bomb", generatedAssetPath("enemies/rotten_apple_bomb_pixel.png"));
     this.load.image("coin", assetPath("objects/coin.png"));
     this.load.image("heal", generatedAssetPath("items/apple_pixel.png"));
-    this.load.image("feverOrb", generatedAssetPath("items/sushi_pixel.png"));
+    this.load.image("feverOrb", generatedAssetPath("items/onigiri_pixel.png"));
 
     this.load.spritesheet("bossPixelSpiritBody", generatedAssetPath("boss-pixel-v1/sprites/spirit_body_sheet.png"), {
       frameWidth: 508,

@@ -42,7 +42,7 @@ IntroScene → MainMenu → CharacterSelect / HowTo
 | 폭탄 | TAP | 80 | 4 | `apple_rotten.png` |
 | 코인 | 무입력 통과 | 20 | 0 | `coin.png` |
 | 회복 아이템 | 무입력 통과 | 0 | 0 | `generated/items/apple_pixel.png` |
-| Fever Orb(초밥) | 무입력 통과 | 50 | 25 | `generated/items/sushi_pixel.png` |
+| Fever Orb(삼각김밥/오니기리) | 무입력 통과 | 50 | 25 | `generated/items/onigiri_pixel.png` |
 
 잘못된 공격은 보상 없이 콤보를 끊고 HP를 감소시킨다. 성공 공격은 콤보와 Fever를 올리며, Fever 중에는 공격 가능한 적을 넓게 처리한다.
 
