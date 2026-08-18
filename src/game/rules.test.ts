@@ -29,7 +29,7 @@ describe("SlashRush scoring rules", () => {
 
   it("keeps the requested runner enemy scale tuning", () => {
     expect(OBJECT_RULES.enemy_basic.height).toBe(248);
-    expect(OBJECT_RULES.enemy_fast.height).toBe(114);
+    expect(OBJECT_RULES.enemy_fast.height).toBe(148);
     expect(OBJECT_RULES.enemy_armor.height).toBe(322);
   });
 });

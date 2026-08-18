@@ -62,8 +62,16 @@ export class FeverImpactOverlay {
     this.speedGraphics = scene.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
     this.burstGraphics = scene.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
     this.root.add([this.tintLayer, this.flashLayer, this.speedGraphics, this.burstGraphics]);
-    for (let index = 0; index < SPEED_LINE_COUNT; index += 1) this.speedLines.push(this.makeSpeedLine(index, true));
+    for (let index = 0; index < SPEED_LINE_COUNT; index += 1) {
+      const line: SpeedLine = { x: 0, y: 0, length: 0, slant: 0, width: 0, speed: 0, alpha: 0, phase: 0, color: FEVER_COLORS[0] };
+      this.resetSpeedLine(line, index, true);
+      this.speedLines.push(line);
+    }
     for (let index = 0; index < BURST_POOL_SIZE; index += 1) {
+      const rays: BurstRay[] = [];
+      for (let rayIndex = 0; rayIndex < BURST_RAY_COUNT; rayIndex += 1) {
+        rays.push({ x: 0, y: 0, color: FEVER_COLORS[0], alpha: 0, width: 0 });
+      }
       this.bursts.push({
         active: false,
         x: 0,
@@ -71,7 +79,7 @@ export class FeverImpactOverlay {
         age: 0,
         duration: 0,
         radius: 0,
-        rays: Array.from({ length: BURST_RAY_COUNT }, () => ({ x: 0, y: 0, color: FEVER_COLORS[0], alpha: 0, width: 0 })),
+        rays,
       });
     }
   }
@@ -81,8 +89,12 @@ export class FeverImpactOverlay {
     this.active = true;
     this.elapsed = 0;
     this.nextBurstDelay = 0;
-    this.speedLines.forEach((line, index) => Object.assign(line, this.makeSpeedLine(index, true)));
-    this.bursts.forEach((burst) => { burst.active = false; });
+    for (let index = 0; index < this.speedLines.length; index += 1) {
+      this.resetSpeedLine(this.speedLines[index], index, true);
+    }
+    for (let index = 0; index < this.bursts.length; index += 1) {
+      this.bursts[index].active = false;
+    }
     this.root.setVisible(true);
     this.flashTween?.stop();
     this.flashLayer.setAlpha(0.18);
@@ -102,7 +114,9 @@ export class FeverImpactOverlay {
     this.flashLayer.setAlpha(0);
     this.speedGraphics.clear();
     this.burstGraphics.clear();
-    this.bursts.forEach((burst) => { burst.active = false; });
+    for (let index = 0; index < this.bursts.length; index += 1) {
+      this.bursts[index].active = false;
+    }
     this.root.setVisible(false);
   }
 
@@ -113,18 +127,19 @@ export class FeverImpactOverlay {
     for (let index = 0; index < this.speedLines.length; index += 1) {
       const line = this.speedLines[index];
       line.x -= line.speed * delta;
-      if (line.x + line.length < -80) Object.assign(line, this.makeSpeedLine(index, false));
+      if (line.x + line.length < -80) this.resetSpeedLine(line, index, false);
     }
     this.nextBurstDelay -= delta;
     if (this.nextBurstDelay <= 0) {
       this.startBurst();
       this.nextBurstDelay = randomBetween(0.08, 0.18);
     }
-    this.bursts.forEach((burst) => {
-      if (!burst.active) return;
+    for (let index = 0; index < this.bursts.length; index += 1) {
+      const burst = this.bursts[index];
+      if (!burst.active) continue;
       burst.age += delta;
       if (burst.age >= burst.duration) burst.active = false;
-    });
+    }
     this.render();
   }
 
@@ -137,24 +152,27 @@ export class FeverImpactOverlay {
     return this.active;
   }
 
-  private makeSpeedLine(index: number, randomizeX: boolean): SpeedLine {
+  private resetSpeedLine(line: SpeedLine, index: number, randomizeX: boolean) {
     const laneHeight = GAME_HEIGHT * 0.94 / SPEED_LINE_COUNT;
-    const y = GAME_HEIGHT * 0.02 + laneHeight * (index + 0.5) + randomBetween(-laneHeight * 0.42, laneHeight * 0.42);
-    return {
-      x: randomizeX ? randomBetween(-GAME_WIDTH * 0.2, GAME_WIDTH * 1.2) : GAME_WIDTH + randomBetween(0, GAME_WIDTH * 0.55),
-      y,
-      length: randomBetween(300, 1180),
-      slant: randomBetween(-28, 28),
-      width: randomBetween(25, 45),
-      speed: randomBetween(2200, 5200),
-      alpha: randomBetween(0.12, 0.32),
-      phase: randomBetween(0, Math.PI * 2),
-      color: FEVER_COLORS[Math.floor(Math.random() * FEVER_COLORS.length)],
-    };
+    line.x = randomizeX ? randomBetween(-GAME_WIDTH * 0.2, GAME_WIDTH * 1.2) : GAME_WIDTH + randomBetween(0, GAME_WIDTH * 0.55);
+    line.y = GAME_HEIGHT * 0.02 + laneHeight * (index + 0.5) + randomBetween(-laneHeight * 0.42, laneHeight * 0.42);
+    line.length = randomBetween(300, 1180);
+    line.slant = randomBetween(-28, 28);
+    line.width = randomBetween(25, 45);
+    line.speed = randomBetween(2200, 5200);
+    line.alpha = randomBetween(0.12, 0.32);
+    line.phase = randomBetween(0, Math.PI * 2);
+    line.color = FEVER_COLORS[Math.floor(Math.random() * FEVER_COLORS.length)];
   }
 
   private startBurst() {
-    const burst = this.bursts.find((candidate) => !candidate.active);
+    let burst: Burst | undefined;
+    for (let index = 0; index < this.bursts.length; index += 1) {
+      if (!this.bursts[index].active) {
+        burst = this.bursts[index];
+        break;
+      }
+    }
     if (!burst) return;
     burst.active = true;
     burst.x = randomBetween(90, GAME_WIDTH - 90);
@@ -162,31 +180,35 @@ export class FeverImpactOverlay {
     burst.age = 0;
     burst.duration = randomBetween(0.24, 0.42);
     burst.radius = randomBetween(70, 170);
-    burst.rays.forEach((ray) => {
+    for (let index = 0; index < burst.rays.length; index += 1) {
+      const ray = burst.rays[index];
       const angle = randomBetween(0, Math.PI * 2);
       ray.x = Math.cos(angle);
       ray.y = Math.sin(angle);
       ray.color = FEVER_COLORS[Math.floor(Math.random() * FEVER_COLORS.length)];
       ray.alpha = randomBetween(0.34, 0.58);
       ray.width = randomBetween(2, 5);
-    });
+    }
   }
 
   private render() {
     this.speedGraphics.clear();
-    this.speedLines.forEach((line) => {
+    for (let index = 0; index < this.speedLines.length; index += 1) {
+      const line = this.speedLines[index];
       const flicker = Math.max(0.03, Math.min(0.22, line.alpha * (0.65 + Math.sin(this.elapsed * 18 + line.phase) * 0.35)));
       this.speedGraphics.lineStyle(line.width, line.color, flicker);
       this.speedGraphics.lineBetween(line.x, line.y, line.x + line.length, line.y + line.slant);
-    });
+    }
 
     this.burstGraphics.clear();
-    this.bursts.forEach((burst) => {
-      if (!burst.active) return;
+    for (let burstIndex = 0; burstIndex < this.bursts.length; burstIndex += 1) {
+      const burst = this.bursts[burstIndex];
+      if (!burst.active) continue;
       const progress = Math.min(1, burst.age / Math.max(0.01, burst.duration));
       const eased = 1 - Math.pow(1 - progress, 3);
       const radius = Phaser.Math.Linear(8, burst.radius, eased);
-      burst.rays.forEach((ray) => {
+      for (let rayIndex = 0; rayIndex < burst.rays.length; rayIndex += 1) {
+        const ray = burst.rays[rayIndex];
         this.burstGraphics.lineStyle(ray.width, ray.color, ray.alpha * (1 - progress));
         this.burstGraphics.lineBetween(
           burst.x + ray.x * radius * 0.18,
@@ -194,7 +216,7 @@ export class FeverImpactOverlay {
           burst.x + ray.x * radius,
           burst.y + ray.y * radius,
         );
-      });
-    });
+      }
+    }
   }
 }

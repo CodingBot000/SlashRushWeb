@@ -66,7 +66,7 @@ export interface ObjectRule {
 
 export const OBJECT_RULES: Record<RunnerObjectType, ObjectRule> = {
   enemy_basic: { required: "tap", good: false, score: 100, fever: 6, key: "enemyBasic", sliceKey: "enemyBasicSlice", height: 248, yOffset: 0, tint: 0xd39a42 },
-  enemy_fast: { required: "double_tap", good: false, score: 150, fever: 10, key: "enemyFast", sliceKey: "enemyFastSlice", height: 114, yOffset: 0, tint: 0xb87932 },
+  enemy_fast: { required: "double_tap", good: false, score: 150, fever: 10, key: "enemyFast", sliceKey: "enemyFastSlice", height: 148, yOffset: 0, tint: 0xb87932 },
   enemy_armor: { required: "long_tap", good: false, score: 150, fever: 10, key: "enemyArmor", sliceKey: "enemyArmorSlice", height: 322, yOffset: 0, tint: 0x7c8da5 },
   bomb: { required: "tap", good: false, score: 80, fever: 4, key: "bomb", sliceKey: "bomb", height: 82, yOffset: -69, tint: 0x181820 },
   coin: { required: "no_input", good: true, score: 20, fever: 0, key: "coin", sliceKey: "coin", height: 82, yOffset: -69, tint: 0xffd84a },

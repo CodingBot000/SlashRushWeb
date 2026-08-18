@@ -39,6 +39,7 @@ interface RunnerObject {
   type: RunnerObjectType;
   rule: (typeof OBJECT_RULES)[RunnerObjectType];
   sprite: Phaser.GameObjects.Image;
+  shadow?: Phaser.GameObjects.Ellipse;
   x: number;
   baseY: number;
   phase: number;
@@ -74,6 +75,10 @@ const COLORS = {
   cyan: 0x5ef3ff,
   green: 0x76ff9c,
 };
+
+const MONSTER_SHADOW_Y = 612;
+const MONSTER_SHADOW_WIDTH = 104;
+const MONSTER_SHADOW_HEIGHT = 22;
 
 export class GameScene extends Phaser.Scene {
   private mode: GameMode = "intro";
@@ -778,6 +783,7 @@ export class GameScene extends Phaser.Scene {
       if (object.handled) continue;
       object.x -= speed * seconds * motion.objects;
       object.sprite.x = object.x;
+      object.shadow?.setPosition(object.x, MONSTER_SHADOW_Y).setVisible(!object.handled);
       if (object.rule.good) object.sprite.y = object.baseY + Math.sin(this.time.now / 160 + object.phase) * 5;
       else {
         const jump = Math.abs(Math.sin(this.time.now / (object.type === "enemy_fast" ? 230 : 330) + object.phase));
@@ -794,12 +800,19 @@ export class GameScene extends Phaser.Scene {
 
   private spawnRunnerObject(type: RunnerObjectType, feverSpawn = false) {
     const rule = OBJECT_RULES[type];
-    const sprite = this.track(this.add.image(1400, 610 + rule.yOffset, rule.key).setOrigin(0.5, 1).setDepth(4));
+    const baseY = 610 + rule.yOffset;
+    const isMonster = type === "enemy_basic" || type === "enemy_fast" || type === "enemy_armor";
+    const shadow = isMonster
+      ? this.track(this.add.ellipse(1400, MONSTER_SHADOW_Y, MONSTER_SHADOW_WIDTH, MONSTER_SHADOW_HEIGHT, 0x000000, 0.34)
+        .setDepth(1)
+        .setName(type + "Shadow"))
+      : undefined;
+    const sprite = this.track(this.add.image(1400, baseY, rule.key).setOrigin(0.5, 1).setDepth(4));
     const texture = this.textures.get(rule.key).getSourceImage() as HTMLImageElement;
     sprite.setDisplaySize(rule.height * (texture.width / texture.height), rule.height);
     if (rule.good) sprite.setDepth(3);
     if (feverSpawn) sprite.setTint(0xc7faff);
-    this.runnerObjects.push({ type, rule, sprite, x: 1400, baseY: 610 + rule.yOffset, phase: Math.random() * Math.PI * 2, handled: false, feverSpawn });
+    this.runnerObjects.push({ type, rule, sprite, shadow, x: 1400, baseY, phase: Math.random() * Math.PI * 2, handled: false, feverSpawn });
   }
 
   private handlePassedObject(object: RunnerObject) {
@@ -853,8 +866,9 @@ export class GameScene extends Phaser.Scene {
       this.combo += 1;
       this.comboPopup?.play(this.combo);
     }
-    if (this.fever >= MAX_FEVER) this.startFever();
+    this.spawnEnemyHitEffect(object);
     this.spawnSlicePieces(object);
+    if (this.fever >= MAX_FEVER) this.startFever();
     this.showFeedback("+" + object.rule.score * multiplier, COLORS.white);
     // The source object must disappear immediately; only the two slice pieces
     // should remain visible during the short defeat animation.
@@ -867,7 +881,10 @@ export class GameScene extends Phaser.Scene {
     if (object.handled) return;
     object.handled = true;
     if (this.invincibleMode) {
-      if (sliced) this.spawnSlicePieces(object, 0xc83f3f);
+      if (sliced) {
+        this.spawnEnemyHitEffect(object, 0xff5368);
+        this.spawnSlicePieces(object, 0xc83f3f);
+      }
       this.showFeedback("INVINCIBLE", COLORS.cyan);
       this.removeRunnerObject(object);
       return;
@@ -875,7 +892,10 @@ export class GameScene extends Phaser.Scene {
     if (this.feverActive) { this.removeRunnerObject(object); return; }
     this.combo = 0;
     this.health -= 1;
-    if (sliced) this.spawnSlicePieces(object, 0xc83f3f);
+    if (sliced) {
+      this.spawnEnemyHitEffect(object, 0xff5368);
+      this.spawnSlicePieces(object, 0xc83f3f);
+    }
     this.showFeedback(sliced ? "MISS!" : "-HP", COLORS.red);
     this.startPlayerHurt();
     this.removeRunnerObject(object);
@@ -926,10 +946,63 @@ export class GameScene extends Phaser.Scene {
     this.updateHud();
   }
 
+  private spawnEnemyHitEffect(object: RunnerObject, tint = this.enemyHitColor(object.type)) {
+    if (!object.type.startsWith("enemy_")) return;
+    const x = object.x;
+    const y = object.sprite.y - object.rule.height * 0.5;
+    const heavy = object.type === "enemy_armor";
+    const rayCount = heavy ? 10 : 8;
+    const coreRadius = heavy ? 10 : 8;
+    const ringRadius = heavy ? 24 : 19;
+    const rayStart = heavy ? 13 : 10;
+    const rayEnd = heavy ? 36 : 30;
+    const impact = this.track(this.add.graphics()
+      .setPosition(x, y)
+      .setDepth(9)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setScale(0.62));
+
+    impact.fillStyle(0xffffff, 0.94);
+    impact.fillCircle(0, 0, coreRadius);
+    impact.lineStyle(3, tint, 0.9);
+    impact.strokeCircle(0, 0, ringRadius);
+    impact.lineStyle(heavy ? 4 : 3, tint, 0.95);
+    for (let index = 0; index < rayCount; index += 1) {
+      const angle = object.phase + (Math.PI * 2 * index) / rayCount;
+      impact.lineBetween(
+        Math.cos(angle) * rayStart,
+        Math.sin(angle) * rayStart,
+        Math.cos(angle) * rayEnd,
+        Math.sin(angle) * rayEnd,
+      );
+    }
+
+    this.tweens.add({
+      targets: impact,
+      scale: heavy ? 1.42 : 1.28,
+      alpha: 0,
+      duration: heavy ? 270 : 220,
+      ease: "Cubic.Out",
+      onComplete: () => {
+        this.tracked = this.tracked.filter((candidate) => candidate !== impact);
+        impact.destroy();
+      },
+    });
+  }
+
+  private enemyHitColor(type: RunnerObjectType) {
+    if (type === "enemy_fast") return 0xff6b42;
+    if (type === "enemy_armor") return 0x9ec8ff;
+    return 0xffd166;
+  }
+
   private removeRunnerObject(object: RunnerObject, destroy = true) {
-    if (destroy) object.sprite.destroy();
+    if (destroy) {
+      object.sprite.destroy();
+      object.shadow?.destroy();
+    }
     this.runnerObjects = this.runnerObjects.filter((candidate) => candidate !== object);
-    this.tracked = this.tracked.filter((candidate) => candidate !== object.sprite);
+    this.tracked = this.tracked.filter((candidate) => candidate !== object.sprite && candidate !== object.shadow);
   }
 
   private spawnSlicePieces(object: RunnerObject, tint?: number) {
@@ -952,8 +1025,10 @@ export class GameScene extends Phaser.Scene {
     this.feverTimeLeft = FEVER_DURATION;
     this.feverSpawnTimer = 0;
     this.fever = MAX_FEVER;
-    this.runnerObjects.forEach((object) => { object.handled = true; object.sprite.destroy(); });
-    this.runnerObjects = [];
+    for (const object of [...this.runnerObjects]) {
+      object.handled = true;
+      this.removeRunnerObject(object);
+    }
     this.feverImpact?.start();
     this.feverText?.setVisible(true);
     this.showFeedback("FEVER!", COLORS.cyan);
