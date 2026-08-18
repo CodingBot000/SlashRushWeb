@@ -21,7 +21,7 @@ export class PlayerVisualController {
   private slashRemaining = 0;
   private hurtRemaining = 0;
   private dead = false;
-  private debugAlwaysVisible = true;
+  private debugAlwaysVisible = false;
   private swordX: number;
   private swordY: number;
   private swordWidth: number;

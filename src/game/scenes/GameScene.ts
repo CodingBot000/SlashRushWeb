@@ -91,7 +91,7 @@ export class GameScene extends Phaser.Scene {
   private swordY = 475;
   private swordWidth = 205;
   private swordHeight = 117;
-  private swordDebugAlwaysVisible = true;
+  private swordDebugAlwaysVisible = false;
   private invincibleMode = false;
   private feedbackTimer = 0;
   private comboPopup?: ComboImpactPopup;
@@ -398,7 +398,7 @@ export class GameScene extends Phaser.Scene {
       strokeThickness: 2,
     }).setOrigin(0.5);
     panel.add(this.swordDebugValueText);
-    this.swordAlwaysLabel = this.makeSwordDebugButton(panel, "SWORD ALWAYS: ON", 140, 128, 240, 40, () => {
+    this.swordAlwaysLabel = this.makeSwordDebugButton(panel, "SWORD ALWAYS: OFF", 140, 128, 240, 40, () => {
       this.swordDebugAlwaysVisible = !this.swordDebugAlwaysVisible;
       this.applySwordDebugTransform();
       this.updateSettingsLabels();
@@ -425,7 +425,7 @@ export class GameScene extends Phaser.Scene {
       this.playSfx("uiClick", 0.4);
       this.setSwordDebugPanelOpen(!panel.visible);
     });
-    this.setSwordDebugPanelOpen(true);
+    this.setSwordDebugPanelOpen(false);
     this.updateSettingsLabels();
   }
 
@@ -781,7 +781,7 @@ export class GameScene extends Phaser.Scene {
       if (object.rule.good) object.sprite.y = object.baseY + Math.sin(this.time.now / 160 + object.phase) * 5;
       else {
         const jump = Math.abs(Math.sin(this.time.now / (object.type === "enemy_fast" ? 230 : 330) + object.phase));
-        object.sprite.y = object.baseY - jump * (object.type === "enemy_fast" ? 22 : object.type === "enemy_armor" ? 10 : 16);
+        object.sprite.y = object.baseY - jump * (object.type === "enemy_fast" ? 44 : object.type === "enemy_armor" ? 10 : 16);
       }
       if (object.x < 200) this.handlePassedObject(object);
     }

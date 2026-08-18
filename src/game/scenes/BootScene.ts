@@ -56,8 +56,8 @@ export class BootScene extends Phaser.Scene {
     this.load.image("enemyArmorSlice", generatedAssetPath("enemies/iron_kettle_armor_pixel.png"));
     this.load.image("bomb", generatedAssetPath("enemies/rotten_apple_bomb_pixel.png"));
     this.load.image("coin", assetPath("objects/coin.png"));
-    this.load.image("heal", assetPath("objects/apple.png"));
-    this.load.image("feverOrb", assetPath("items/fever_orb.png"));
+    this.load.image("heal", generatedAssetPath("items/apple_pixel.png"));
+    this.load.image("feverOrb", generatedAssetPath("items/sushi_pixel.png"));
 
     this.load.spritesheet("bossPixelSpiritBody", generatedAssetPath("boss-pixel-v1/sprites/spirit_body_sheet.png"), {
       frameWidth: 508,
@@ -86,6 +86,22 @@ export class BootScene extends Phaser.Scene {
   }
 
   create() {
+    const pixelItemTextures = [
+      "enemyBasic",
+      "enemyBasicSlice",
+      "enemyFast",
+      "enemyFastSlice",
+      "enemyArmor",
+      "enemyArmorSlice",
+      "bomb",
+      "coin",
+      "heal",
+      "feverOrb",
+    ];
+    for (const key of pixelItemTextures) {
+      this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+    }
+
     const pixelBossTextures = [
       "bossPixelSpiritBody",
       "bossPixelSpiritAura",

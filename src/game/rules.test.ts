@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clamp, comboMultiplier, nextSpawnDelay, scoreForDefeat } from "./rules";
+import { clamp, comboMultiplier, nextSpawnDelay, OBJECT_RULES, scoreForDefeat } from "./rules";
 
 describe("SlashRush scoring rules", () => {
   it("ramps combo multipliers without exceeding four times", () => {
@@ -25,5 +25,11 @@ describe("SlashRush scoring rules", () => {
     expect(clamp(-4, 0, 10)).toBe(0);
     expect(clamp(4, 0, 10)).toBe(4);
     expect(clamp(14, 0, 10)).toBe(10);
+  });
+
+  it("keeps the requested runner enemy scale tuning", () => {
+    expect(OBJECT_RULES.enemy_basic.height).toBe(248);
+    expect(OBJECT_RULES.enemy_fast.height).toBe(114);
+    expect(OBJECT_RULES.enemy_armor.height).toBe(322);
   });
 });
